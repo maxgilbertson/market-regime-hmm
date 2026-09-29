@@ -1,40 +1,42 @@
 {
-  "as_of": "2026-09-23",
+  "as_of": "2026-09-28",
+  "updated_at_utc": "2026-09-29T10:38:12Z",
+  "model_fitted_at_utc": "2026-09-29 10:37:15+00:00",
   "ticker": "^GSPC",
   "train_end": "2022-12-31",
-  "n_obs": 8996,
-  "close": 7722.330078125,
-  "vix": 14.800000190734863,
+  "n_obs": 9000,
+  "close": 7683.68994140625,
+  "vix": 16.06999969482422,
   "regime_filtered": "Sideways Quiet",
   "regime_smoothed": "Sideways Quiet",
   "regime_viterbi": "Sideways Quiet",
   "regime_predicted_tomorrow": "Sideways Quiet",
   "filtered_probs": {
-    "Bull Quiet": 0.0466,
-    "Bull Volatile": 0.0,
-    "Sideways Quiet": 0.9534,
+    "Bull Quiet": 0.0943,
+    "Bull Volatile": 0.0001,
+    "Sideways Quiet": 0.9056,
     "Sideways Volatile": 0.0,
     "Bear Quiet": 0.0,
     "Bear Volatile": 0.0
   },
   "predicted_probs_tomorrow": {
-    "Bull Quiet": 0.0737,
-    "Bull Volatile": 0.0006,
-    "Sideways Quiet": 0.9053,
-    "Sideways Volatile": 0.0035,
-    "Bear Quiet": 0.0169,
-    "Bear Volatile": 0.0
+    "Bull Quiet": 0.1186,
+    "Bull Volatile": 0.0007,
+    "Sideways Quiet": 0.8611,
+    "Sideways Volatile": 0.0033,
+    "Bear Quiet": 0.0161,
+    "Bear Volatile": 0.0001
   },
-  "entropy_filtered": 0.1054,
-  "entropy_filtered_20d_mean": 0.0762,
+  "entropy_filtered": 0.1747,
+  "entropy_filtered_20d_mean": 0.1173,
   "features_last": {
-    "ret_1d": -0.00547,
-    "ret_1w": 0.01785,
-    "ret_1m": 0.00623,
-    "ret_1y": 0.14734,
-    "trend_mom": 0.07113,
-    "log_vix": 2.69463,
-    "log_rv21": -2.24431
+    "ret_1d": -0.00774,
+    "ret_1w": -0.01049,
+    "ret_1m": -0.00614,
+    "ret_1y": 0.15132,
+    "trend_mom": 0.06371,
+    "log_vix": 2.77695,
+    "log_rv21": -2.22034
   },
   "expected_duration_days": {
     "Bull Quiet": 33.3,
@@ -45,5 +47,5 @@
     "Bear Volatile": 36.3
   },
   "loglik_per_obs_train": -5.3009,
-  "loglik_per_obs_full": -5.3076
+  "loglik_per_obs_full": -5.3066
 }

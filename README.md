@@ -10,7 +10,15 @@ A six-state hidden Markov model that classifies the S&P 500 into one of six mark
 
 The model reports filtered regime probabilities, regime entropy, smoothed and Viterbi paths, and a one-day-ahead regime forecast. It is calibrated with Baum-Welch (forward-backward EM) on 1990-2022, and everything after 2022 is out-of-sample.
 
-Open `regime_dashboard.html` in a browser for the interactive dashboard.
+**Live dashboard:** https://maxgilbertson.github.io/market-regime-hmm/
+
+## Live updates
+
+A GitHub Actions workflow runs every 15 minutes. It downloads fresh S&P 500 and VIX prices, re-runs the filter with the saved calibration in `model/hmm_params.json`, and republishes the dashboard to GitHub Pages. During US market hours the latest day is a live, partial session, so the current regime call can move intraday. An open dashboard reloads itself every 15 minutes.
+
+GitHub runs scheduled jobs on a best-effort basis, so an update can land a few minutes late. Raw outputs from the latest run are also published under `/data/`, for example `summary.json` and `regime_history.csv`.
+
+To recalibrate, run `python hmm_regime.py --refit` locally and commit the new `model/hmm_params.json`. Changing any modelling flag also triggers a refit automatically.
 
 ## Quick start
 
@@ -33,6 +41,8 @@ Useful options for `hmm_regime.py`:
 | `--anchor` | `sign` | Regime anchor rule: `sign` or `tercile` |
 | `--mean-weight` | `3000` | Prior strength holding state means to their anchors; `0` gives free EM |
 | `--outdir` | `out` | Output folder |
+| `--refit` | off | Ignore the saved calibration and fit again |
+| `--offline` | off | Use cached prices instead of downloading |
 
 ## Method
 

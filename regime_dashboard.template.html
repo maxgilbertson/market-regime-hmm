@@ -125,7 +125,7 @@ td:first-child{font-weight:500}
     <div>
       <div class="eyebrow">Hidden Markov model · 6 regimes · daily</div>
       <h1>S&amp;P 500 Regime Monitor</h1>
-      <p>Filtered regime probabilities from a six-state Gaussian HMM on trend momentum, VIX and multi-horizon returns. Calibrated by Baum-Welch (forward-backward) on 1990-2022; everything after is out-of-sample.</p>
+      <p>Filtered regime probabilities from a six-state Gaussian HMM on trend momentum, VIX and multi-horizon returns. Calibrated by Baum-Welch (forward-backward) on 1990-2022; everything after is out-of-sample. During US market hours the latest day is a live, partial session.</p>
     </div>
     <div class="mono" style="color:var(--muted);font-size:12px" id="asof"></div>
   </div>
@@ -225,6 +225,14 @@ td:first-child{font-weight:500}
 
 <script>
 const D = /*__DATA__*/null;
+// the GitHub Pages copy is rebuilt every 15 minutes; reload to pick up new data
+const LIVE = /\.github\.io$/.test(location.hostname);
+if (LIVE) {
+  let loadedAt = Date.now();
+  const due = () => Date.now() - loadedAt > 15 * 60 * 1000;
+  setInterval(() => { if (document.visibilityState === 'visible' && due()) location.reload(); }, 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && due()) location.reload(); });
+}
 const REG = D.regimes, N = D.dates.length, K = 6;
 const COL = i => getComputedStyle(document.documentElement).getPropertyValue('--r'+i).trim();
 const VOL = [false,true,false,true,false,true];
@@ -244,7 +252,13 @@ const lastProbs = REG.map((_,k)=>D.probs[k][last]);
 const fl = S.features_last;
 
 /* ---------- hero ---------- */
-document.getElementById('asof').innerHTML = 'as of '+fmt.date(S.as_of)+' · '+S.ticker+' · '+N.toLocaleString()+' trading days';
+{
+  const upd = S.updated_at_utc ? new Date(S.updated_at_utc) : null;
+  const updTxt = upd && !isNaN(upd) ? upd.toLocaleString(undefined,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',timeZoneName:'short'}) : null;
+  document.getElementById('asof').innerHTML =
+    'as of '+fmt.date(S.as_of)+' · '+S.ticker+' · '+N.toLocaleString()+' trading days'
+    + (updTxt ? '<br>updated '+updTxt+(LIVE ? ' · refreshes every 15 min' : '') : '');
+}
 document.getElementById('ll').textContent = S.loglik_per_obs_train.toFixed(3);
 const hero = document.getElementById('hero');
 hero.innerHTML = `

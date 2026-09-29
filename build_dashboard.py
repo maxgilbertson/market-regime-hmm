@@ -1,5 +1,7 @@
 """Bundle the HMM outputs in ./out into the self-contained regime_dashboard.html."""
 import json
+import shutil
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -40,3 +42,14 @@ html = template.replace("/*__DATA__*/null", blob)
 html = html.replace("·", "&middot;").replace("×", "&times;").replace("−", "&minus;")
 Path("regime_dashboard.html").write_text(html, encoding="utf-8")
 print(f"wrote regime_dashboard.html  ({len(html)/1e6:.2f} MB, {len(data['dates'])} days)")
+
+# --site DIR: also lay out the GitHub Pages site (dashboard + raw outputs for direct download)
+if "--site" in sys.argv:
+    site = Path(sys.argv[sys.argv.index("--site") + 1])
+    (site / "data").mkdir(parents=True, exist_ok=True)
+    (site / "index.html").write_text(html, encoding="utf-8")
+    for f in ("summary.json", "regime_history.csv", "transition_matrix.csv",
+              "regime_stats.csv", "state_means.csv", "regime_chart.png"):
+        shutil.copy2(OUT / f, site / "data" / f)
+    (site / ".nojekyll").write_text("")
+    print(f"wrote site to {site}/")

@@ -1,0 +1,23 @@
+name: Keep scheduled updates alive
+
+# GitHub pauses scheduled workflows in repositories with no commits for 60 days.
+# This makes a tiny commit once a week so the 15-minute regime updates never stop.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  touch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          date -u > .github/last-keepalive
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/last-keepalive
+          git commit -m "Keep scheduled updates alive" && git push

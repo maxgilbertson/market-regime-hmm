@@ -79,28 +79,43 @@ ANCHOR_RULE = "sign"  # "sign" (200d MA + 1m return signs) or "tercile" (momentu
 
 
 # --------------------------------------------------------------------------- data
-def load_data(ticker: str, start: str, cache: Path) -> pd.DataFrame:
-    if cache.exists():
-        raw = pd.read_csv(cache, index_col=0, parse_dates=True)
-        if raw.index[-1] >= pd.Timestamp.today().normalize() - pd.Timedelta(days=4):
-            return raw
+def load_data(ticker: str, start: str, cache: Path, offline: bool = False) -> pd.DataFrame:
+    """
+    Always downloads fresh prices (during US market hours the last row is
+    today's live, partial bar). Falls back to the local cache only if the
+    download fails, or when offline=True.
+    """
+    if offline:
+        if not cache.exists():
+            raise RuntimeError(f"--offline given but no cache at {cache}")
+        return pd.read_csv(cache, index_col=0, parse_dates=True)
+
     import time
     import yfinance as yf
 
-    series = {}
-    for name, sym in (("close", ticker), ("vix", "^VIX")):
-        for attempt in range(4):
-            s = yf.Ticker(sym).history(start=start, auto_adjust=True)["Close"]
-            if len(s) > 1000:
-                break
-            time.sleep(2 + attempt * 2)
-        else:
-            raise RuntimeError(f"could not download {sym}")
-        s.index = pd.to_datetime(s.index).tz_localize(None).normalize()
-        series[name] = s
-    px = pd.concat(series, axis=1).dropna()
-    px.to_csv(cache)
-    return px
+    try:
+        series = {}
+        for name, sym in (("close", ticker), ("vix", "^VIX")):
+            for attempt in range(4):
+                try:
+                    s = yf.Ticker(sym).history(start=start, auto_adjust=True)["Close"]
+                except Exception:  # noqa: BLE001
+                    s = pd.Series(dtype=float)
+                if len(s) > 1000:
+                    break
+                time.sleep(2 + attempt * 2)
+            else:
+                raise RuntimeError(f"could not download {sym}")
+            s.index = pd.to_datetime(s.index).tz_localize(None).normalize()
+            series[name] = s[~s.index.duplicated(keep="last")]
+        px = pd.concat(series, axis=1).dropna()
+        px.to_csv(cache)
+        return px
+    except Exception as e:  # noqa: BLE001
+        if cache.exists():
+            print(f"  download failed ({e}); using cached prices", file=sys.stderr)
+            return pd.read_csv(cache, index_col=0, parse_dates=True)
+        raise
 
 
 def build_features(px: pd.DataFrame) -> pd.DataFrame:
@@ -188,6 +203,40 @@ def fit_hmm(X: np.ndarray, anchors: np.ndarray, seeds: int, mean_weight: float =
     if best is None:
         raise RuntimeError("all HMM fits failed")
     return best, best_ll
+
+
+def save_model(path: Path, config: dict, model, mu, sd, fitted_at: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "config": config,
+        "fitted_at_utc": fitted_at,
+        "feature_mean": list(map(float, mu)),
+        "feature_std": list(map(float, sd)),
+        "startprob": model.startprob_.tolist(),
+        "transmat": model.transmat_.tolist(),
+        "means": model.means_.tolist(),
+        "covars": model.covars_.tolist(),
+    }, indent=1))
+
+
+def load_model(path: Path, config: dict):
+    """Return (model, mu, sd, fitted_at) if a saved calibration matches config, else None."""
+    from hmmlearn.hmm import GaussianHMM
+
+    if not path.exists():
+        return None
+    blob = json.loads(path.read_text())
+    if blob.get("config") != config:
+        print(f"  saved calibration in {path} was fit with different settings; refitting")
+        return None
+    K = len(blob["startprob"])
+    m = GaussianHMM(n_components=K, covariance_type="full", init_params="")
+    m.n_features = len(blob["means"][0])
+    m.startprob_ = np.array(blob["startprob"])
+    m.transmat_ = np.array(blob["transmat"])
+    m.means_ = np.array(blob["means"])
+    m.covars_ = np.array(blob["covars"])
+    return m, np.array(blob["feature_mean"]), np.array(blob["feature_std"]), blob["fitted_at_utc"]
 
 
 def emission_logprob(model, X: np.ndarray) -> np.ndarray:
@@ -365,30 +414,52 @@ def main():
                          "Free EM fits ~0.2 nats/obs better but lets 'Bear Quiet' drift into a "
                          "positive-return dip state; 3000 keeps all six regimes on their definitions.")
     ap.add_argument("--outdir", default="out")
+    ap.add_argument("--model-file", default="model/hmm_params.json",
+                    help="saved calibration; reused when its settings match, so live runs only re-filter")
+    ap.add_argument("--refit", action="store_true", help="ignore the saved calibration and refit")
+    ap.add_argument("--offline", action="store_true", help="use cached prices instead of downloading")
     args = ap.parse_args()
     global ANCHOR_RULE
     ANCHOR_RULE = args.anchor
 
     outdir = Path(args.outdir)
     outdir.mkdir(exist_ok=True)
+    updated_at = pd.Timestamp.now(tz="UTC")
 
     print("Loading data ...")
-    px = load_data(args.ticker, args.start, outdir / "prices.csv")
+    px = load_data(args.ticker, args.start, outdir / "prices.csv", offline=args.offline)
     df = build_features(px)
     print(f"  {len(df):,} observations {df.index[0].date()} -> {df.index[-1].date()}")
 
+    config = {
+        "ticker": args.ticker, "start": args.start, "train_end": args.train_end,
+        "seeds": args.seeds, "anchor": args.anchor, "mean_weight": args.mean_weight,
+        "features": FEATURES,
+    }
+    saved = load_model(Path(args.model_file), config) if not args.refit else None
+
     train = df.loc[: args.train_end]
-    mu, sd = train[FEATURES].mean().values, train[FEATURES].std().values
+    if saved is not None:
+        model, mu, sd, fitted_at = saved
+        print(f"Using saved calibration from {args.model_file} (fitted {fitted_at})")
+    else:
+        mu, sd = train[FEATURES].mean().values, train[FEATURES].std().values
     X_all = ((df[FEATURES] - mu) / sd).values
     X_tr = ((train[FEATURES] - mu) / sd).values
     print(f"  training window {train.index[0].date()} -> {train.index[-1].date()} ({len(train):,} obs)")
 
-    anchors = anchor_labels(train)
-    print("  anchor bucket sizes:",
-          {r.value: int((anchors == i).sum()) for i, r in enumerate(REGIME_ORDER)})
-
-    print(f"Calibrating 6-state Gaussian HMM with Baum-Welch (forward-backward EM), {args.seeds} restarts ...")
-    model, ll_train = fit_hmm(X_tr, anchors, args.seeds, mean_weight=args.mean_weight)
+    if saved is None:
+        anchors = anchor_labels(train)
+        print("  anchor bucket sizes:",
+              {r.value: int((anchors == i).sum()) for i, r in enumerate(REGIME_ORDER)})
+        print(f"Calibrating 6-state Gaussian HMM with Baum-Welch (forward-backward EM), "
+              f"{args.seeds} restarts ...")
+        model, ll_train = fit_hmm(X_tr, anchors, args.seeds, mean_weight=args.mean_weight)
+        fitted_at = str(updated_at.floor("s"))
+        save_model(Path(args.model_file), config, model, mu, sd, fitted_at)
+        print(f"  saved calibration to {args.model_file}")
+    else:
+        ll_train = model.score(X_tr)
 
     mapping = {k: REGIME_ORDER[k] for k in range(6)}          # anchored by construction
     check = label_states(model, mu, sd)                         # rank-based re-derivation
@@ -468,6 +539,8 @@ def main():
     recent = out.iloc[-10:]
     summary = {
         "as_of": str(last.date()),
+        "updated_at_utc": updated_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "model_fitted_at_utc": fitted_at,
         "ticker": args.ticker,
         "train_end": args.train_end,
         "n_obs": int(len(out)),

@@ -3,3 +3,5 @@ __pycache__/
 .venv/
 # raw Yahoo Finance download cache; hmm_regime.py re-fetches it
 out/prices.csv
+# GitHub Pages build output, produced by the publish workflow
+site/
