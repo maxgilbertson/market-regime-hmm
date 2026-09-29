@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.venv/
+# raw Yahoo Finance download cache; hmm_regime.py re-fetches it
+out/prices.csv

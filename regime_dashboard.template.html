@@ -1,0 +1,444 @@
+<title>S&P 500 Regime Monitor</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap">
+<style>
+:root{
+  --bg:#f6f6f3; --surface:#fcfcfb; --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+  --grid:#e1e0d9; --axis:#c3c2b7; --hair:rgba(11,11,11,.10);
+  --accent:#2a78d6; --accent-soft:rgba(42,120,214,.14); --vix:#eb6834;
+  --r0:#5fbf5f; --r1:#006300; --r2:#86b6ef; --r3:#1c5cab; --r4:#ec835a; --r5:#b0201f;
+  --band-alpha:.30;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#111110; --surface:#1a1a19; --ink:#ffffff; --ink-2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --axis:#383835; --hair:rgba(255,255,255,.10);
+    --accent:#3987e5; --accent-soft:rgba(57,135,229,.18); --vix:#d95926;
+    --r0:#6ccf6c; --r1:#2e9a2e; --r2:#86b6ef; --r3:#4a8be0; --r4:#ec835a; --r5:#d84a49;
+    --band-alpha:.34;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#111110; --surface:#1a1a19; --ink:#ffffff; --ink-2:#c3c2b7; --muted:#898781;
+  --grid:#2c2c2a; --axis:#383835; --hair:rgba(255,255,255,.10);
+  --accent:#3987e5; --accent-soft:rgba(57,135,229,.18); --vix:#d95926;
+  --r0:#6ccf6c; --r1:#2e9a2e; --r2:#86b6ef; --r3:#4a8be0; --r4:#ec835a; --r5:#d84a49;
+  --band-alpha:.34;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding-block:20px 48px;padding-inline:16px}
+h1,h2,h3{font-family:"IBM Plex Sans Condensed","IBM Plex Sans",system-ui,sans-serif;text-wrap:balance;margin:0}
+h1{font-size:clamp(22px,3vw,30px);font-weight:600;letter-spacing:-.01em}
+h2{font-size:17px;font-weight:600;margin-bottom:10px}
+.eyebrow{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500}
+.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+.num{font-variant-numeric:tabular-nums}
+.hdr{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px;margin-bottom:20px}
+.hdr p{margin:4px 0 0;color:var(--ink-2);max-width:62ch}
+
+/* hero */
+.hero{display:grid;grid-template-columns:minmax(260px,1.3fr) repeat(4,minmax(120px,1fr));gap:12px;margin-bottom:22px}
+.hero > div{background:var(--surface);border:1px solid var(--hair);border-radius:6px;padding:14px 16px}
+.call{display:flex;flex-direction:column;gap:6px;border-left:6px solid var(--call-color,var(--accent)) !important}
+.call .name{font-family:"IBM Plex Sans Condensed",system-ui,sans-serif;font-size:clamp(28px,4vw,40px);font-weight:600;line-height:1.05;display:flex;align-items:center;gap:12px}
+.swatch{display:inline-block;width:18px;height:18px;border-radius:3px;flex:none;border:1px solid var(--hair)}
+.call .sub{color:var(--ink-2);font-size:13px}
+.kv .v{font-size:24px;font-weight:500;line-height:1.1;margin-top:6px}
+.kv .d{color:var(--muted);font-size:12px;margin-top:4px}
+.up{color:#0ca30c}.dn{color:#d03b3b}
+
+/* regime tiles */
+.tiles{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:24px}
+.tile{background:var(--surface);border:1px solid var(--hair);border-radius:6px;padding:12px 12px 10px;display:flex;flex-direction:column;gap:6px;position:relative}
+.tile.current{outline:2px solid var(--ink);outline-offset:-2px}
+.tile .t{display:flex;align-items:center;gap:8px;font-weight:500;font-size:13px}
+.tile .p{font-size:22px;font-weight:500;line-height:1}
+.bar{height:6px;background:var(--grid);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:3px}
+.tile .c{color:var(--muted);font-size:11.5px;line-height:1.35}
+
+/* charts */
+.panel{background:var(--surface);border:1px solid var(--hair);border-radius:6px;padding:14px 16px 8px;margin-bottom:14px;min-width:0}
+.hero > div,.tile{min-width:0}
+.tile .t{font-size:12.5px;line-height:1.2;min-height:2.4em;align-items:flex-start}
+.tile .t .swatch{margin-top:1px}
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.ranges{display:flex;gap:4px}
+.ranges button{font:inherit;font-size:12.5px;padding:4px 10px;border:1px solid var(--hair);background:transparent;color:var(--ink-2);border-radius:4px;cursor:pointer}
+.ranges button[aria-pressed="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.ranges button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--ink-2)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend .swatch{width:12px;height:12px}
+.chart{position:relative;width:100%}
+.chart svg{display:block;width:100%;height:auto;overflow:visible}
+.chart .lbl{font:11px "IBM Plex Mono",ui-monospace,monospace;fill:var(--muted)}
+.chart .ax{stroke:var(--axis)}
+.chart .gr{stroke:var(--grid);stroke-width:1}
+.chart .ylab{position:absolute;left:0;top:0;font-size:11.5px;color:var(--ink-2);font-weight:500}
+.xh{stroke:var(--ink);stroke-width:1;stroke-dasharray:3 3;opacity:0;pointer-events:none}
+.tip{position:absolute;pointer-events:none;background:var(--surface);color:var(--ink);border:1px solid var(--hair);box-shadow:0 4px 14px rgba(0,0,0,.14);border-radius:5px;padding:8px 10px;font-size:12px;line-height:1.4;min-width:190px;opacity:0;transform:translate(12px,-8px);z-index:5;white-space:nowrap}
+.tip b{font-weight:600}
+.tip .row{display:flex;justify-content:space-between;gap:14px}
+.tip .row span:last-child{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+
+/* tables */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th,td{padding:6px 8px;text-align:right;border-bottom:1px solid var(--grid);white-space:nowrap}
+th{color:var(--muted);font-weight:500;font-size:11.5px}
+th:first-child,td:first-child{text-align:left}
+td:first-child{font-weight:500}
+.tw{overflow-x:auto}
+.heat td.h{color:var(--surface)}
+.notes{color:var(--ink-2);font-size:13px;max-width:78ch}
+.notes p{margin:0 0 8px}
+.notes code{font-family:"IBM Plex Mono",monospace;font-size:12px;background:var(--accent-soft);padding:1px 4px;border-radius:3px}
+.cons{display:grid;grid-template-columns:repeat(3,1fr);gap:18px 24px;margin-top:6px}
+.cons ul{margin:6px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:8px}
+.cons li{line-height:1.4}
+.cons li b{color:var(--ink)}
+@media (max-width:900px){ .cons{grid-template-columns:1fr} }
+.srcbox{position:relative;margin-top:8px}
+.srcbox pre{margin:0;max-height:520px;overflow:auto;background:var(--bg);border:1px solid var(--hair);border-radius:5px;padding:14px 16px;font:12px/1.5 "IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;color:var(--ink);tab-size:4}
+.copy{position:absolute;top:8px;right:20px;font:inherit;font-size:12px;padding:4px 10px;border:1px solid var(--hair);background:var(--surface);color:var(--ink-2);border-radius:4px;cursor:pointer}
+.copy:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.eyebrow code{text-transform:none;letter-spacing:0;background:var(--accent-soft);padding:1px 4px;border-radius:3px;color:var(--ink-2)}
+
+@media (max-width:900px){
+  .hero{grid-template-columns:1fr 1fr}
+  .hero .call{grid-column:1/-1}
+  .tiles{grid-template-columns:repeat(3,1fr)}
+  .grid2{grid-template-columns:1fr}
+}
+@media (max-width:520px){
+  .tiles{grid-template-columns:repeat(2,1fr)}
+  .hero{grid-template-columns:1fr 1fr}
+}
+@media (prefers-reduced-motion:no-preference){ .tip{transition:opacity .08s} }
+</style>
+
+<div class="wrap">
+  <div class="hdr">
+    <div>
+      <div class="eyebrow">Hidden Markov model · 6 regimes · daily</div>
+      <h1>S&amp;P 500 Regime Monitor</h1>
+      <p>Filtered regime probabilities from a six-state Gaussian HMM on trend momentum, VIX and multi-horizon returns. Calibrated by Baum-Welch (forward-backward) on 1990-2022; everything after is out-of-sample.</p>
+    </div>
+    <div class="mono" style="color:var(--muted);font-size:12px" id="asof"></div>
+  </div>
+
+  <div class="hero" id="hero"></div>
+  <div class="tiles" id="tiles"></div>
+
+  <div class="panel">
+    <div class="toolbar">
+      <h2>Price, regime and confidence</h2>
+      <div class="ranges" id="ranges" role="group" aria-label="Date range"></div>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div class="chart" id="c-price" style="margin-top:8px"><div class="ylab">S&amp;P 500, log scale · shading = filtered regime, hatched = volatile</div></div>
+    <div class="chart" id="c-prob"><div class="ylab">Filtered P(regime)</div></div>
+    <div class="chart" id="c-ent"><div class="ylab">Regime entropy (0 = certain, 1 = uniform over 6)</div></div>
+    <div class="chart" id="c-vix"><div class="ylab">VIX</div></div>
+    <div class="tip" id="tip"></div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h2>Transition matrix</h2>
+      <div class="eyebrow" style="margin-bottom:8px">Daily P(next regime | current), rows = from</div>
+      <div class="tw"><table class="heat num" id="trans"></table></div>
+    </div>
+    <div class="panel">
+      <h2>Regime statistics</h2>
+      <div class="eyebrow" style="margin-bottom:8px">Filtered labels 1990-2026 · next-day returns, annualised</div>
+      <div class="tw"><table class="num" id="stats"></table></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>State centres in raw units</h2>
+    <div class="eyebrow" style="margin-bottom:8px">Fitted emission means per regime</div>
+    <div class="tw"><table class="num" id="means"></table></div>
+  </div>
+
+  <div class="panel notes">
+    <h2>Method</h2>
+    <p><b>Observations.</b> Log returns over 1, 5, 21 and 252 trading days; trend momentum as log(close / 200-day SMA); log VIX; log 21-day realised volatility. Standardised with training-window statistics only.</p>
+    <p><b>Calibration.</b> Six-state Gaussian HMM with full covariances, fit by Baum-Welch EM (forward-backward) on data through 2022-12-30 with 8 restarts. States are anchored to the regime grid: direction from the sign of the 200-day trend and the 1-month return, volatility from the VIX median. A Gaussian prior on the state means (weight 3000 pseudo-observations) keeps each state on its definition; free EM otherwise drifts "Bear Quiet" into a positive-return dip state because persistent low-VIX bear markets barely exist in S&amp;P history.</p>
+    <p><b>Inference.</b> Filtered P(s<sub>t</sub> | y<sub>1..t</sub>) from the forward pass is what the shading and tiles show. Smoothed and Viterbi paths are computed for comparison. Entropy is the Shannon entropy of the filtered distribution divided by log 6. Tomorrow's regime forecast is filtered<sub>t</sub> × A.</p>
+    <p>In-sample log-likelihood is <span class="mono" id="ll"></span> nats per observation. Research tool, not advice.</p>
+  </div>
+
+  <div class="panel notes" style="max-width:none">
+    <h2>Constraints and drawbacks</h2>
+    <div class="cons">
+      <div>
+        <div class="eyebrow">Model assumptions</div>
+        <ul>
+          <li><b>Overlapping returns break conditional independence.</b> The 1-week, 1-month and 1-year returns share most of their daily inputs, so consecutive observations are strongly autocorrelated. The HMM treats them as independent given the state, which inflates persistence and makes filtered probabilities over-confident: entropy sits near zero on most days and only spikes at transitions.</li>
+          <li><b>Gaussian emissions with fat-tailed data.</b> Daily returns and VIX changes are skewed and heavy-tailed. A crash day is an outlier under every state, so the model can flip abruptly or assign the day to Bear Volatile on magnitude alone.</li>
+          <li><b>Six states is imposed, not selected.</b> No BIC or cross-validated comparison against 2 to 8 states was run. The 3 x 2 grid is a modelling convention, not something the data asked for.</li>
+          <li><b>Time-homogeneous transitions.</b> One transition matrix for 1990 to 2026. The persistence of a regime does not depend on how long it has lasted, on macro conditions, or on the calendar.</li>
+        </ul>
+      </div>
+      <div>
+        <div class="eyebrow">Calibration and identification</div>
+        <ul>
+          <li><b>Labels are partly imposed.</b> Free EM does not produce a real "Bear Quiet" state; it must be held in place with a prior on the state means. That costs about 0.2 nats per observation of likelihood, and the anchor rule (200-day trend, 1-month return, VIX median) is a hand-chosen definition.</li>
+          <li><b>Bear Quiet is weakly identified.</b> Only 148 training days satisfy its anchor rule. Its covariance and transitions rest on a small sample, and its strong next-day returns look like dip-buying rather than a stable regime property.</li>
+          <li><b>Hyperparameters were chosen with hindsight.</b> The prior weight and anchor rule were picked after looking at full-sample outputs, so the out-of-sample split is honest for the parameters but not for those design choices.</li>
+          <li><b>EM finds local optima.</b> Eight restarts spread over roughly 100 nats of log-likelihood; a different seed set can change state shapes at the margins.</li>
+          <li><b>Static parameters.</b> Nothing is re-estimated after 2022. Structural changes such as the growth of short-dated options and the shift in VIX behaviour are not learned.</li>
+        </ul>
+      </div>
+      <div>
+        <div class="eyebrow">Data and use</div>
+        <ul>
+          <li><b>One index, one volatility gauge.</b> S&amp;P 500 price index (no dividends) and VIX. No breadth, credit spreads, rates, cross-asset or intraday information, and nothing outside US large caps.</li>
+          <li><b>Filtered calls lag.</b> Switching typically takes 2 to 5 sessions. The shading and probabilities are causal, but smoothed and Viterbi paths use future data and are not tradable.</li>
+          <li><b>Regime statistics are descriptive.</b> The next-day return table conditions on the same-day filtered label with no costs, slippage or position sizing. It is not a backtest.</li>
+          <li><b>Warm-up loss.</b> The 252-day return and 200-day average drop the first year of history, and a fresh ticker needs a year of data before the model can run.</li>
+          <li><b>Data source.</b> Free yfinance downloads with occasional gaps and revisions; the VIX methodology itself changed in 2003 and 2014.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="toolbar">
+      <div>
+        <h2>Source code</h2>
+        <div class="eyebrow">Python 3.12 · reproduce with <code class="mono">pip install -r requirements.txt</code> then <code class="mono">python hmm_regime.py</code> and <code class="mono">python build_dashboard.py</code></div>
+      </div>
+      <div class="ranges" id="srctabs" role="tablist" aria-label="Source files"></div>
+    </div>
+    <div class="srcbox">
+      <button type="button" class="copy" id="copybtn">Copy file</button>
+      <pre id="srcpre"><code id="srccode"></code></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+const D = /*__DATA__*/null;
+const REG = D.regimes, N = D.dates.length, K = 6;
+const COL = i => getComputedStyle(document.documentElement).getPropertyValue('--r'+i).trim();
+const VOL = [false,true,false,true,false,true];
+const S = D.summary;
+const fmt = {
+  pct: v => (v*100).toFixed(1)+'%',
+  pct0: v => (v*100).toFixed(0)+'%',
+  n0: v => v.toLocaleString(undefined,{maximumFractionDigits:0}),
+  n1: v => v.toFixed(1),
+  n2: v => v.toFixed(2),
+  n3: v => v.toFixed(3),
+  date: s => { const d=new Date(s+'T00:00:00'); return d.toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}); },
+  sgn: v => (v>=0?'+':'')+(v*100).toFixed(1)+'%',
+};
+const last = N-1, cur = D.regime[last];
+const lastProbs = REG.map((_,k)=>D.probs[k][last]);
+const fl = S.features_last;
+
+/* ---------- hero ---------- */
+document.getElementById('asof').innerHTML = 'as of '+fmt.date(S.as_of)+' · '+S.ticker+' · '+N.toLocaleString()+' trading days';
+document.getElementById('ll').textContent = S.loglik_per_obs_train.toFixed(3);
+const hero = document.getElementById('hero');
+hero.innerHTML = `
+  <div class="call" style="--call-color:${COL(cur)}">
+    <div class="eyebrow">Current regime · filtered</div>
+    <div class="name"><span class="swatch" style="background:${COL(cur)}"></span>${REG[cur]}</div>
+    <div class="sub"><span class="mono">${fmt.pct(lastProbs[cur])}</span> probability · entropy <span class="mono">${fmt.n3(D.entropy[last])}</span> · smoothed and Viterbi agree: ${S.regime_smoothed===REG[cur]&&S.regime_viterbi===REG[cur]?'yes':'no'}</div>
+    <div class="sub">Tomorrow's forecast: <b>${S.regime_predicted_tomorrow}</b> (${fmt.pct(S.predicted_probs_tomorrow[S.regime_predicted_tomorrow])})</div>
+  </div>
+  <div class="kv"><div class="eyebrow">S&amp;P 500 close</div><div class="v mono">${fmt.n0(S.close)}</div><div class="d">1-day <span class="${fl.ret_1d>=0?'up':'dn'}">${fmt.sgn(fl.ret_1d)}</span></div></div>
+  <div class="kv"><div class="eyebrow">VIX</div><div class="v mono">${fmt.n2(S.vix)}</div><div class="d">21d realised vol ${fmt.pct(Math.exp(fl.log_rv21))}</div></div>
+  <div class="kv"><div class="eyebrow">Momentum</div><div class="v mono">${fmt.sgn(fl.ret_1m)}</div><div class="d">1 month · 1 week <span class="${fl.ret_1w>=0?'up':'dn'}">${fmt.sgn(fl.ret_1w)}</span></div></div>
+  <div class="kv"><div class="eyebrow">Trend</div><div class="v mono">${fmt.sgn(fl.trend_mom)}</div><div class="d">vs 200-day average · 1 year <span class="${fl.ret_1y>=0?'up':'dn'}">${fmt.sgn(fl.ret_1y)}</span></div></div>`;
+
+/* ---------- tiles ---------- */
+const tiles = document.getElementById('tiles');
+tiles.innerHTML = REG.map((r,k)=>`
+  <div class="tile${k===cur?' current':''}">
+    <div class="t"><span class="swatch" style="background:${COL(k)}"></span>${r}</div>
+    <div class="p mono">${fmt.pct(lastProbs[k])}</div>
+    <div class="bar"><i style="width:${Math.max(1.5,lastProbs[k]*100)}%;background:${COL(k)}"></i></div>
+    <div class="c">typ. spell ${Math.round(D.stats.expected_duration_days[k])}d · avg VIX ${fmt.n1(D.stats.mean_vix[k])}<br>${fmt.pct0(D.stats.share[k])} of history</div>
+  </div>`).join('');
+
+/* ---------- legend + ranges ---------- */
+document.getElementById('legend').innerHTML = REG.map((r,k)=>`<span><span class="swatch" style="background:${COL(k)}"></span>${r}</span>`).join('')
+  + `<span><span class="swatch" style="background:transparent;border:1px dashed var(--muted)"></span>out-of-sample from ${fmt.date(D.dates[D.oosStart])}</span>`;
+const RANGES = ['1Y','3Y','5Y','10Y','All'];
+let range = '10Y';
+try{ const r=localStorage.getItem('regime-range'); if(RANGES.includes(r)) range=r; }catch(e){}
+const rg = document.getElementById('ranges');
+function drawRanges(){ rg.innerHTML = RANGES.map(r=>`<button type="button" id="rng-${r}" aria-pressed="${r===range}">${r}</button>`).join(''); }
+rg.addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; range=b.textContent; try{localStorage.setItem('regime-range',range);}catch(x){} drawRanges(); render(); });
+drawRanges();
+
+/* ---------- chart helpers ---------- */
+function rangeStart(){
+  const yrs={'1Y':1,'3Y':3,'5Y':5,'10Y':10}[range]; if(!yrs) return 0;
+  const d=new Date(D.dates[last]+'T00:00:00'); d.setFullYear(d.getFullYear()-yrs);
+  const iso=d.toISOString().slice(0,10); let i=0; while(i<N && D.dates[i]<iso) i++; return i;
+}
+function niceTicks(lo,hi,n){
+  const span=hi-lo, raw=span/Math.max(1,n), p=Math.pow(10,Math.floor(Math.log10(raw)));
+  const f=raw/p, step=(f<1.5?1:f<3?2:f<7?5:10)*p, out=[];
+  for(let v=Math.ceil(lo/step)*step; v<=hi+1e-9; v+=step) out.push(+v.toFixed(10));
+  return out;
+}
+function yearTicks(i0){
+  const t=[]; let prev=D.dates[i0].slice(0,4);
+  for(let i=i0+1;i<N;i++){ const y=D.dates[i].slice(0,4); if(y!==prev){ t.push([i,y]); prev=y; } }
+  const span=N-i0; const every = span>6000?5: span>3000?2:1;
+  return t.filter(([,y])=>+y%every===0);
+}
+const ML=56, MR=10, MT=22, MB=18;
+const charts = {};
+function frame(id,H,i0,yScale,yTicks,yFmt,body,showX){
+  const el=document.getElementById(id), W=Math.max(320,el.clientWidth), IW=W-ML-MR, IH=H-MT-MB, n=N-i0;
+  const x=i=>ML+(i-i0)/(n-1)*IW;
+  let s=`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-label="${id}">`;
+  s+=`<defs>${[1,3,5].map(k=>`<pattern id="hv${k}-${id}" patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(45)"><rect width="7" height="7" fill="${COL(k)}" opacity="${getComputedStyle(document.documentElement).getPropertyValue('--band-alpha')}"/><line x1="0" y1="0" x2="0" y2="7" stroke="${COL(k)}" stroke-width="1.4" opacity=".7"/></pattern>`).join('')}</defs>`;
+  for(const v of yTicks){ const y=yScale(v); s+=`<line class="gr" x1="${ML}" x2="${W-MR}" y1="${y}" y2="${y}"/><text class="lbl" x="${ML-6}" y="${y+4}" text-anchor="end">${yFmt(v)}</text>`; }
+  for(const [i,y] of yearTicks(i0)){ const xx=x(i); s+=`<line class="gr" x1="${xx}" x2="${xx}" y1="${MT}" y2="${H-MB}"/>`; if(showX) s+=`<text class="lbl" x="${xx}" y="${H-4}" text-anchor="middle">${y}</text>`; }
+  if(D.oosStart>i0){ const xx=x(D.oosStart); s+=`<line x1="${xx}" x2="${xx}" y1="${MT}" y2="${H-MB}" stroke="var(--muted)" stroke-dasharray="4 3"/>`; }
+  s+=body(x,IW,IH);
+  s+=`<line class="ax" x1="${ML}" x2="${W-MR}" y1="${H-MB}" y2="${H-MB}"/>`;
+  s+=`<line class="xh" id="xh-${id}" y1="${MT}" y2="${H-MB}" x1="0" x2="0"/>`;
+  s+=`<rect id="ov-${id}" x="${ML}" y="${MT}" width="${IW}" height="${IH}" fill="transparent" style="cursor:crosshair"/>`;
+  s+='</svg>';
+  el.querySelectorAll('svg').forEach(o=>o.remove()); el.insertAdjacentHTML('beforeend',s);
+  charts[id]={x,i0,n,W,H,IW,ML};
+}
+function bandRects(x,i0,y0,y1,id){
+  let out='', start=i0, half=(x(i0+1)-x(i0))/2;
+  for(let i=i0+1;i<=N;i++){
+    if(i===N||D.regime[i]!==D.regime[start]){
+      const k=D.regime[start], xa=x(start)-half, xb=x(i-1)+half;
+      out+=`<rect x="${xa.toFixed(1)}" y="${y0}" width="${(xb-xa).toFixed(1)}" height="${y1-y0}" fill="${VOL[k]?`url(#hv${k}-${id})`:COL(k)}" ${VOL[k]?'':`opacity="${getComputedStyle(document.documentElement).getPropertyValue('--band-alpha')}"`}/>`;
+      start=i;
+    }
+  }
+  return out;
+}
+function linePath(x,y,i0,arr){ let p=''; for(let i=i0;i<N;i++) p+=(i===i0?'M':'L')+x(i).toFixed(1)+' '+y(arr[i]).toFixed(1); return p; }
+
+/* ---------- render ---------- */
+function render(){
+  const i0=rangeStart();
+  // price (log)
+  {
+    const H=300, IH=H-MT-MB; let lo=Infinity,hi=-Infinity;
+    for(let i=i0;i<N;i++){ const v=D.close[i]; if(v<lo)lo=v; if(v>hi)hi=v; }
+    const llo=Math.log(lo*0.97), lhi=Math.log(hi*1.03);
+    const y=v=>MT+IH*(1-(Math.log(v)-llo)/(lhi-llo));
+    const ticks=niceTicks(lo,hi,5);
+    frame('c-price',H,i0,y,ticks,fmt.n0,(x,IW)=>bandRects(x,i0,MT,H-MB,'c-price')
+      +`<path d="${linePath(x,y,i0,D.close)}" fill="none" stroke="var(--ink)" stroke-width="1.4"/>`
+      +`<circle id="dot-c-price" r="4" fill="var(--ink)" stroke="var(--surface)" stroke-width="2" opacity="0"/>`,false);
+    charts['c-price'].y=y;
+  }
+  // stacked probs
+  {
+    const H=170, IH=H-MT-MB, y=v=>MT+IH*(1-v);
+    frame('c-prob',H,i0,y,[0,.5,1],fmt.pct0,(x)=>{
+      let s='', cum=new Float64Array(N).fill(0);
+      for(let k=0;k<K;k++){
+        let top='', bot='';
+        for(let i=i0;i<N;i++){ const c1=cum[i]+D.probs[k][i]; top+=(i===i0?'M':'L')+x(i).toFixed(1)+' '+y(c1).toFixed(1); }
+        for(let i=N-1;i>=i0;i--){ bot+='L'+x(i).toFixed(1)+' '+y(cum[i]).toFixed(1); }
+        s+=`<path d="${top}${bot}Z" fill="${COL(k)}" stroke="var(--surface)" stroke-width=".5"/>`;
+        for(let i=i0;i<N;i++) cum[i]+=D.probs[k][i];
+      }
+      return s;
+    },false);
+  }
+  // entropy
+  {
+    const H=130, IH=H-MT-MB, y=v=>MT+IH*(1-v);
+    frame('c-ent',H,i0,y,[0,.5,1],fmt.n1,(x)=>{
+      const lp=linePath(x,y,i0,D.entropy);
+      return `<path d="${lp}L${x(N-1).toFixed(1)} ${y(0)}L${x(i0).toFixed(1)} ${y(0)}Z" fill="var(--accent)" opacity=".18"/><path d="${lp}" fill="none" stroke="var(--accent)" stroke-width="1.2"/>`;
+    },false);
+  }
+  // vix
+  {
+    const H=150, IH=H-MT-MB; let hi=0; for(let i=i0;i<N;i++) if(D.vix[i]>hi) hi=D.vix[i];
+    hi=Math.ceil(hi/10)*10; const y=v=>MT+IH*(1-v/hi);
+    frame('c-vix',H,i0,y,niceTicks(0,hi,4),fmt.n0,(x)=>`<path d="${linePath(x,y,i0,D.vix)}" fill="none" stroke="var(--vix)" stroke-width="1.2"/>`,true);
+  }
+  wireHover();
+}
+
+/* ---------- hover ---------- */
+const tip=document.getElementById('tip');
+function wireHover(){
+  for(const id of Object.keys(charts)){
+    const ov=document.getElementById('ov-'+id);
+    ov.onmousemove=ov.ontouchmove=e=>{
+      const pt=e.touches?e.touches[0]:e; const svg=ov.ownerSVGElement, r=svg.getBoundingClientRect();
+      const c=charts[id], px=(pt.clientX-r.left)*(c.W/r.width);
+      const i=Math.max(c.i0,Math.min(N-1,Math.round(c.i0+(px-c.ML)/c.IW*(c.n-1))));
+      showAt(i, pt.clientX, pt.clientY);
+    };
+    ov.onmouseleave=hide;
+  }
+}
+function showAt(i,cx,cy){
+  for(const id of Object.keys(charts)){ const c=charts[id], xx=c.x(i), l=document.getElementById('xh-'+id); l.setAttribute('x1',xx); l.setAttribute('x2',xx); l.style.opacity=1; }
+  const dot=document.getElementById('dot-c-price'); if(dot){ dot.setAttribute('cx',charts['c-price'].x(i)); dot.setAttribute('cy',charts['c-price'].y(D.close[i])); dot.style.opacity=1; }
+  const k=D.regime[i];
+  tip.innerHTML=`<b>${fmt.date(D.dates[i])}</b>${i>=D.oosStart?' <span style="color:var(--muted)">· out-of-sample</span>':''}
+    <div class="row" style="margin-top:4px"><span><span class="swatch" style="background:${COL(k)};width:10px;height:10px;vertical-align:-1px"></span> ${REG[k]}</span><span>${fmt.pct(D.probs[k][i])}</span></div>
+    ${REG.map((r,j)=>j===k?'':`<div class="row" style="color:var(--ink-2)"><span>${r}</span><span>${fmt.pct(D.probs[j][i])}</span></div>`).join('')}
+    <div class="row" style="margin-top:4px;border-top:1px solid var(--grid);padding-top:4px"><span>S&amp;P 500</span><span>${fmt.n0(D.close[i])}</span></div>
+    <div class="row"><span>VIX</span><span>${fmt.n2(D.vix[i])}</span></div>
+    <div class="row"><span>Entropy</span><span>${fmt.n3(D.entropy[i])}</span></div>`;
+  const panel=tip.parentElement.getBoundingClientRect();
+  let tx=cx-panel.left, ty=cy-panel.top; const tw=tip.offsetWidth||210;
+  if(tx+tw+24>panel.width) tx=tx-tw-24;
+  tip.style.left=tx+'px'; tip.style.top=ty+'px'; tip.style.opacity=1;
+}
+function hide(){ tip.style.opacity=0; for(const id of Object.keys(charts)) document.getElementById('xh-'+id).style.opacity=0; const d=document.getElementById('dot-c-price'); if(d) d.style.opacity=0; }
+
+/* ---------- tables ---------- */
+const short = r => r.replace('Sideways','Side.').replace('Volatile','Vol').replace('Quiet','Quiet');
+document.getElementById('trans').innerHTML = `<tr><th>from \\ to</th>${REG.map(r=>`<th>${short(r)}</th>`).join('')}</tr>`
+  + D.transition.map((row,i)=>`<tr><td>${REG[i]}</td>${row.map((v,j)=>{ const a=Math.min(1,0.06+Math.pow(v,.5)*0.95); return `<td class="${a>.6?'h':''}" style="background:color-mix(in srgb, var(--accent) ${Math.round(a*100)}%, transparent)">${i===j?v.toFixed(3):v<.0005?'<span style="color:var(--muted)">·</span>':v.toFixed(3)}</td>`; }).join('')}</tr>`).join('');
+const st=D.stats;
+document.getElementById('stats').innerHTML = `<tr><th>Regime</th><th>Days</th><th>Share</th><th>Return</th><th>Vol</th><th>Sharpe</th><th>Avg VIX</th><th>Typ. spell</th></tr>`
+  + REG.map((r,k)=>`<tr><td><span class="swatch" style="background:${COL(k)};width:10px;height:10px;vertical-align:-1px;margin-right:6px"></span>${r}</td><td>${st.days[k].toLocaleString()}</td><td>${fmt.pct(st.share[k])}</td><td class="${st.ann_return_next_day[k]>=0?'':'dn'}">${fmt.sgn(st.ann_return_next_day[k])}</td><td>${fmt.pct(st.ann_vol_next_day[k])}</td><td>${fmt.n2(st.sharpe_next_day[k])}</td><td>${fmt.n1(st.mean_vix[k])}</td><td>${Math.round(st.expected_duration_days[k])}d</td></tr>`).join('');
+const FEAT={ret_1d:'1d ret',ret_1w:'1w ret',ret_1m:'1m ret',ret_1y:'1y ret',trend_mom:'vs 200d',log_vix:'VIX',log_rv21:'Realised vol'};
+document.getElementById('means').innerHTML = `<tr><th>Regime</th>${D.features.map(f=>`<th>${FEAT[f]||f}</th>`).join('')}</tr>`
+  + REG.map((r,k)=>`<tr><td>${r}</td>${D.features.map(f=>{ const v=D.means[f][k]; if(f==='log_vix') return `<td>${Math.exp(v).toFixed(1)}</td>`; if(f==='log_rv21') return `<td>${fmt.pct(Math.exp(v))}</td>`; return `<td class="${v<0?'dn':''}">${fmt.sgn(v)}</td>`; }).join('')}</tr>`).join('');
+
+/* ---------- source viewer ---------- */
+const SRC = D.sources || {}, SRCNAMES = Object.keys(SRC);
+let srcSel = SRCNAMES[0];
+const srcTabs=document.getElementById('srctabs'), srcCode=document.getElementById('srccode'), copyBtn=document.getElementById('copybtn');
+function drawSrc(){
+  srcTabs.innerHTML = SRCNAMES.map(n=>`<button type="button" role="tab" id="src-${n.replace(/\W/g,'_')}" aria-pressed="${n===srcSel}">${n}</button>`).join('');
+  srcCode.textContent = SRC[srcSel] || '';
+  document.getElementById('srcpre').scrollTop = 0;
+}
+srcTabs.addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; srcSel=b.textContent; drawSrc(); });
+copyBtn.addEventListener('click',()=>{
+  const text=SRC[srcSel]||'';
+  const done=()=>{ copyBtn.textContent='Copied '+srcSel; setTimeout(()=>copyBtn.textContent='Copy file',1800); };
+  const fallback=()=>{ const r=document.createRange(); r.selectNodeContents(srcCode); const s=getSelection(); s.removeAllRanges(); s.addRange(r); copyBtn.textContent='Selected, press Ctrl+C'; setTimeout(()=>copyBtn.textContent='Copy file',2500); };
+  try{ navigator.clipboard.writeText(text).then(done,fallback); }catch(e){ fallback(); }
+});
+if(SRCNAMES.length) drawSrc();
+
+/* ---------- boot ---------- */
+render();
+let rt; window.addEventListener('resize',()=>{ clearTimeout(rt); rt=setTimeout(render,120); });
+const mq=window.matchMedia('(prefers-color-scheme: dark)'); mq.addEventListener && mq.addEventListener('change',()=>{ render(); });
+new MutationObserver(()=>render()).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+</script>

@@ -1,0 +1,7 @@
+regime,days,share,ann_return_next_day,ann_vol_next_day,sharpe_next_day,mean_vix,expected_duration_days
+Bull Quiet,2441,0.2713,0.0582,0.0948,0.6139,13.1726,33.2757
+Bull Volatile,2000,0.2223,0.1206,0.1507,0.8003,20.3097,76.6181
+Sideways Quiet,1361,0.1513,0.0689,0.1178,0.5850,15.2842,19.3498
+Sideways Volatile,1711,0.1902,0.0502,0.2045,0.2455,23.5798,34.2825
+Bear Quiet,664,0.0738,0.2376,0.1324,1.7947,16.3943,19.5785
+Bear Volatile,819,0.0910,0.0899,0.3886,0.2314,35.5467,36.2849

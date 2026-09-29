@@ -1,0 +1,7 @@
+,Bull Quiet,Bull Volatile,Sideways Quiet,Sideways Volatile,Bear Quiet,Bear Volatile
+Bull Quiet,0.9699,0.0025,0.0248,0.0003,0.0015,0.0009
+Bull Volatile,0.0022,0.9869,0.0025,0.0068,0.0003,0.0013
+Sideways Quiet,0.0299,0.0005,0.9483,0.0036,0.0176,0.0000
+Sideways Volatile,0.0026,0.0103,0.0000,0.9708,0.0054,0.0109
+Bear Quiet,0.0317,0.0014,0.0067,0.0097,0.9489,0.0016
+Bear Volatile,0.0000,0.0009,0.0000,0.0266,0.0000,0.9724
