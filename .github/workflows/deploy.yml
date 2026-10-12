@@ -14,11 +14,14 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: false
+  # a newer run replaces a queued or stuck one, so one stuck 'waiting' deploy
+  # can no longer freeze the site (as happened on 6 Oct 2026)
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -43,6 +46,7 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

@@ -1,0 +1,24 @@
+[2026-10-12T15:04:58Z] HOLDOUT RUN START  c*=C3  B0  end=2026-10-09  decision.json sha256 592387b4b51844f894332d83bb7bca15361020d31c707af616a5f4d8da595ac2
+[2026-10-12T15:04:58Z] verified 129 hashes (PREREG 8ae42ec6a4ac..), dev fingerprint OK; cache last complete day now 2026-10-09
+[2026-10-12T15:05:00Z] isotonic map frozen BEFORE unlock: confidence_map_frozen.json sha256 b62a9f520e1d159c0243b5c9cffe3a3b173d6123b7f483b0ac8c43871971c047 (4526 dev pairs)
+[2026-10-12T15:05:03Z] loaded 1985-01-02..2026-10-09; dev slice identical to development data: True
+[2026-10-12T15:06:29Z] fit B0 2024: ok 70.6s gate={'rank_ok': True, 'bull_sign_ok': True, 'bear_sign_ok': True, 'vol_twin_ok': True, 'pass': True}
+[2026-10-12T15:06:34Z] fit B0 2025: ok 75.4s gate={'rank_ok': True, 'bull_sign_ok': True, 'bear_sign_ok': True, 'vol_twin_ok': True, 'pass': True}
+[2026-10-12T15:06:53Z] fit C3 2026: ok 94.4s gate={'rank_ok': True, 'bull_sign_ok': True, 'bear_sign_ok': True, 'vol_twin_ok': True, 'pass': True}
+[2026-10-12T15:07:11Z] fit B0 2023: ok 112.3s gate={'rank_ok': True, 'bull_sign_ok': True, 'bear_sign_ok': True, 'vol_twin_ok': True, 'pass': True}
+[2026-10-12T15:07:25Z] fit B0 2026: ok 126.4s gate={'rank_ok': True, 'bull_sign_ok': True, 'bear_sign_ok': True, 'vol_twin_ok': True, 'pass': True}
+[2026-10-12T15:07:34Z] fit B0 2022: ok 60.0s gate={'rank_ok': True, 'bull_sign_ok': True, 'bear_sign_ok': True, 'vol_twin_ok': True, 'pass': True}
+[2026-10-12T15:07:36Z] fit C3 2024: ok 137.3s gate={'rank_ok': True, 'bull_sign_ok': True, 'bear_sign_ok': True, 'vol_twin_ok': True, 'pass': True}
+[2026-10-12T15:07:39Z] fit C3 2022: ok 70.0s gate={'rank_ok': True, 'bull_sign_ok': True, 'bear_sign_ok': True, 'vol_twin_ok': True, 'pass': True}
+[2026-10-12T15:07:49Z] fit C3 2023: ok 150.6s gate={'rank_ok': True, 'bull_sign_ok': True, 'bear_sign_ok': True, 'vol_twin_ok': True, 'pass': True}
+[2026-10-12T15:07:59Z] fit C3 2025: ok 160.8s gate={'rank_ok': True, 'bull_sign_ok': True, 'bear_sign_ok': True, 'vol_twin_ok': True, 'pass': True}
+[2026-10-12T15:08:19Z] fit C3 2020: ok 54.4s gate={'rank_ok': True, 'bull_sign_ok': True, 'bear_sign_ok': True, 'vol_twin_ok': True, 'pass': True}
+[2026-10-12T15:08:28Z] fit B0 2019: ok 48.8s gate={'rank_ok': True, 'bull_sign_ok': True, 'bear_sign_ok': True, 'vol_twin_ok': True, 'pass': True}
+[2026-10-12T15:08:42Z] fit C3 2021: ok 109.7s gate={'rank_ok': True, 'bull_sign_ok': True, 'bear_sign_ok': True, 'vol_twin_ok': True, 'pass': True}
+[2026-10-12T15:08:47Z] fit B0 2021: ok 95.6s gate={'rank_ok': True, 'bull_sign_ok': True, 'bear_sign_ok': True, 'vol_twin_ok': True, 'pass': True}
+[2026-10-12T15:08:55Z] fit B0 2020: ok 80.6s gate={'rank_ok': True, 'bull_sign_ok': True, 'bear_sign_ok': True, 'vol_twin_ok': True, 'pass': True}
+[2026-10-12T15:09:35Z] fit C3 2019: ok 119.3s gate={'rank_ok': True, 'bull_sign_ok': True, 'bear_sign_ok': True, 'vol_twin_ok': True, 'pass': True}
+[2026-10-12T15:09:57Z] VERDICT FAIL  H1=True  H2=True  H3=False  H4=True  H5=True  H6=True  H7=None
+[2026-10-12T15:10:17Z] context benchmarks written (GARCH-t, climatology, rulebook, static saved, 2023-latest)
+[2026-10-12T15:10:22Z] deployment artifacts: confidence_map.json df108280b75a.., hmm_params_C3_2026.json 68a870a0ef4d.., b0_shadow_params_2026.json 424a1730212f.., wf_history.csv bd59d29094c4..
+[2026-10-12T15:10:22Z] done in 324s

@@ -1,630 +1,477 @@
 <!doctype html>
 <html lang="en">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>S&P 500 Regime Monitor</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap">
+<title>S&amp;P 500 Regime Monitor</title>
+<meta name="description" content="Which of six moods (regimes) the US stock market is in today, from a statistical model.">
+<meta property="og:title" content="S&amp;P 500 Regime Monitor">
+<meta property="og:description" content="Which of six moods (regimes) the US stock market is in today, from a statistical model.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230064b5'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&display=swap">
 <style>
-/* Regime colours: Bull = blue, Sideways = neutral grey, Bear = orange; Quiet = lighter tint, Volatile = darker shade + hatching.
-   Checked with the dataviz palette validator (all pairs, protan/deutan) against both chart surfaces. */
-:root{
-  --bg:#f6f6f3; --surface:#fcfcfb; --ink:#0b0b0b; --ink-2:#52514e; --muted:#6f6e69;
-  --grid:#e1e0d9; --axis:#c3c2b7; --hair:rgba(11,11,11,.10);
-  --accent:#2a78d6; --accent-soft:rgba(42,120,214,.14);
-  --up:#0b7a0b; --dn:#c22f2f; --warn-bg:rgba(250,178,25,.20); --warn-bd:rgba(176,120,0,.45);
-  --r0:#64a1ee; --r1:#0064b5; --r2:#c4c2ba; --r3:#6f6e69; --r4:#f2943c; --r5:#b94a00;
-  --band-q:.40; --band-v:.30; --band-s:.65;
-  --stripe:color-mix(in srgb, var(--surface) 50%, transparent);
-}
-@media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
-    color-scheme:dark;
-    --bg:#111110; --surface:#1a1a19; --ink:#ffffff; --ink-2:#c3c2b7; --muted:#9a988f;
-    --grid:#2c2c2a; --axis:#383835; --hair:rgba(255,255,255,.10);
-    --accent:#3987e5; --accent-soft:rgba(57,135,229,.18);
-    --up:#3cc13c; --dn:#f26b6b; --warn-bg:rgba(250,178,25,.16); --warn-bd:rgba(250,178,25,.45);
-    --r0:#87bafd; --r1:#2f82d6; --r2:#8c8a83; --r3:#5f5e59; --r4:#fb9f44; --r5:#ce5c22;
-    --band-q:.42; --band-v:.20; --band-s:.60;
-  }
-}
-:root[data-theme="dark"]{
-  color-scheme:dark;
-  --bg:#111110; --surface:#1a1a19; --ink:#ffffff; --ink-2:#c3c2b7; --muted:#9a988f;
-  --grid:#2c2c2a; --axis:#383835; --hair:rgba(255,255,255,.10);
-  --accent:#3987e5; --accent-soft:rgba(57,135,229,.18);
-  --up:#3cc13c; --dn:#f26b6b; --warn-bg:rgba(250,178,25,.16); --warn-bd:rgba(250,178,25,.45);
-  --r0:#87bafd; --r1:#2f82d6; --r2:#8c8a83; --r3:#5f5e59; --r4:#fb9f44; --r5:#ce5c22;
-  --band-q:.42; --band-v:.20; --band-s:.60;
-}
+/* Moods: Bull blue, Sideways grey, Bear orange; Volatile = darker shade + hatching */
+:root{--bg:#f6f6f3;--surface:#fcfcfb;--ink:#0b0b0b;--ink-2:#52514e;--muted:#6f6e69;--grid:#e6e5df;--track:#e1e0d9;--zone:#c9c7bd;
+  --hair:rgba(11,11,11,.10);--swbd:rgba(11,11,11,.25);--accent:#1f6cc7;--warn-bg:rgba(250,178,25,.20);--warn-bd:rgba(176,120,0,.45);
+  --r0:#64a1ee;--r1:#0064b5;--r2:#c4c2ba;--r3:#6f6e69;--r4:#f2943c;--r5:#b94a00;--un:.35}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#111110;--surface:#1a1a19;--ink:#fff;--ink-2:#c3c2b7;--muted:#9a988f;--grid:#2a2a28;--track:#2f2f2c;--zone:#55544f;
+  --hair:rgba(255,255,255,.10);--swbd:rgba(255,255,255,.25);--accent:#3987e5;--warn-bg:rgba(250,178,25,.18);--warn-bd:rgba(250,178,25,.45);
+  --r0:#87bafd;--r1:#2f82d6;--r2:#9d9b93;--r3:#77766f;--r4:#fb9f44;--r5:#ce5c22;--un:.45}}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#111110;--surface:#1a1a19;--ink:#fff;--ink-2:#c3c2b7;--muted:#9a988f;--grid:#2a2a28;--track:#2f2f2c;--zone:#55544f;
+  --hair:rgba(255,255,255,.10);--swbd:rgba(255,255,255,.25);--accent:#3987e5;--warn-bg:rgba(250,178,25,.18);--warn-bd:rgba(250,178,25,.45);
+  --r0:#87bafd;--r1:#2f82d6;--r2:#9d9b93;--r3:#77766f;--r4:#fb9f44;--r5:#ce5c22;--un:.45}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif}
-.wrap{max-width:1180px;margin:0 auto;padding-block:20px 48px;padding-inline:16px}
-h1,h2,h3{font-family:"IBM Plex Sans Condensed","IBM Plex Sans",system-ui,sans-serif;text-wrap:balance;margin:0}
-h1{font-size:clamp(22px,3vw,30px);font-weight:600;letter-spacing:-.01em}
-h2{font-size:17px;font-weight:600;margin-bottom:6px}
-h3{font-size:15px;font-weight:600;margin-bottom:4px}
-a{color:var(--accent)}
-a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.eyebrow{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:500}
-.sub2{font-size:12.5px;color:var(--ink-2);margin:0 0 10px}
-.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
-.num{font-variant-numeric:tabular-nums}
-.hdr{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px;margin-bottom:18px}
-.hdr p{margin:6px 0 0;color:var(--ink-2);max-width:64ch;font-size:15px}
-.asof{font-size:12.5px;color:var(--ink-2);text-align:right}
-.stale{display:inline-block;margin-top:5px;padding:1px 9px;border-radius:999px;border:1px solid var(--warn-bd);background:var(--warn-bg);color:var(--ink);font-size:12px;font-weight:500}
-.up{color:var(--up)}.dn{color:var(--dn)}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-variant-numeric:tabular-nums}
+.wrap{max-width:1120px;margin:0 auto;padding:24px 16px 16px}
+h1,h2,h3{margin:0;font-weight:600}
+h1,h2{font-size:17px}h3{font-size:14px}
+p{margin:0}
+a{color:var(--accent);text-underline-offset:2px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.muted{color:var(--muted)}.s12{font-size:12px}
+.pill{display:inline-block;padding:0 8px;border-radius:999px;border:1px solid var(--warn-bd);background:var(--warn-bg);color:var(--ink);font-size:12px;margin-left:8px;font-weight:400}
+.pill.info{border-color:var(--hair);background:var(--track)}
+.sw{display:inline-block;width:12px;height:12px;border-radius:3px;flex:none;border:1px solid var(--swbd);vertical-align:-1px}
+.sw.v{background-image:repeating-linear-gradient(135deg,transparent 0 4px,color-mix(in srgb,var(--surface) 50%,transparent) 4px 6px)}
+.sw.lg{width:22px;height:22px;border-radius:4px}
 
-/* swatches: volatile regimes carry the same diagonal hatching as the charts */
-.swatch{display:inline-block;width:16px;height:16px;border-radius:3px;flex:none;border:1px solid var(--hair);vertical-align:-2px}
-.hatch{background-image:repeating-linear-gradient(135deg,transparent 0 4px,var(--stripe) 4px 6px)}
+/* header */
+.top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:6px 24px;padding-bottom:16px;border-bottom:1px solid var(--hair);margin-bottom:24px}
+.top p{color:var(--ink-2);margin-top:2px}
+.meta{font-size:12px;color:var(--muted);text-align:right;line-height:1.6}
+.meta b{font-weight:400;color:var(--ink-2)}
 
-/* hero: mood card + 2x2 numbers */
-.hero{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:12px;margin-bottom:12px}
-.card{background:var(--surface);border:1px solid var(--hair);border-radius:6px;padding:14px 16px;min-width:0}
-.call{display:flex;flex-direction:column;gap:6px;border-left:6px solid var(--call-color,var(--accent))}
-.call .name{font-family:"IBM Plex Sans Condensed",system-ui,sans-serif;font-size:clamp(30px,4vw,40px);font-weight:600;line-height:1.05;display:flex;align-items:center;gap:12px}
-.call .name .swatch{width:20px;height:20px}
-.call .mean{font-size:17px;color:var(--ink);font-weight:500}
-.call .conf{font-size:14px;color:var(--ink-2)}
-.call .conf b{color:var(--ink);font-weight:600}
-.fc{margin-top:6px;padding-top:10px;border-top:1px solid var(--grid);display:flex;flex-direction:column;gap:6px}
-.fc-row{display:grid;grid-template-columns:minmax(0,150px) minmax(0,1fr) 52px;align-items:center;gap:10px;font-size:13px}
-.fc-row .nm{display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.fc-row .nm .swatch{width:12px;height:12px}
-.fc-row .pc{text-align:right;font-size:12.5px}
-.track{height:8px;background:var(--grid);border-radius:4px;overflow:hidden}
-.track i{display:block;height:100%;border-radius:4px}
-.kvs{display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:12px;min-width:0}
-.kv{display:flex;flex-direction:column;justify-content:space-between}
-.kv .v{font-size:26px;font-weight:500;line-height:1.1;margin-top:8px}
-.kv .v .vl{font-family:"IBM Plex Sans",system-ui,sans-serif;font-size:14px;font-weight:500;color:var(--ink-2);margin-right:4px}
-.kv .d{color:var(--ink-2);font-size:12.5px;margin-top:6px}
+/* page grid */
+.grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);grid-template-areas:"mood sees" "chart chart" "how how" "foot foot";gap:28px 64px}
+.grid.nosees{grid-template-areas:"mood mood" "chart chart" "how how" "foot foot"}
+.mood{grid-area:mood;min-width:0}.sees{grid-area:sees;min-width:0}.panel{grid-area:chart;min-width:0}.fold{grid-area:how}footer{grid-area:foot}
 
-/* regime tiles: 6 across, 3x2 (direction across, calm/jittery down) on narrower screens */
-.tiles{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-bottom:22px;padding-top:4px}
-.tile{background:var(--surface);border:1px solid var(--hair);border-radius:6px;padding:12px 12px 10px;display:flex;flex-direction:column;gap:5px;min-width:0;position:relative}
-.tile.current{outline:2px solid var(--ink);outline-offset:-2px}
-.tile .t{display:flex;align-items:flex-start;gap:7px;font-weight:600;font-size:13px;line-height:1.2}
-.tile .t .swatch{margin-top:1px}
-.tile .dir{color:var(--ink-2);font-size:10px;margin-right:3px;vertical-align:1px}
-.tile .desc{font-size:12.5px;color:var(--ink-2);line-height:1.3;min-height:2.6em}
-.tile .p{font-size:22px;font-weight:500;line-height:1}
-.now{position:absolute;top:-9px;right:10px;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;background:var(--ink);color:var(--surface);border-radius:3px;padding:0 6px;line-height:1.5}
-.bar{height:6px;background:var(--grid);border-radius:3px;overflow:hidden}
-.bar i{display:block;height:100%;border-radius:3px}
-.tile .c{color:var(--ink-2);font-size:12px;line-height:1.3}
+/* mood block */
+.kicker{color:var(--ink-2)}
+.name{font-size:32px;line-height:1.15;display:flex;align-items:center;gap:12px;margin:4px 0 6px}
+.desc{font-size:17px}.desc .since{color:var(--ink-2)}
+.sure{margin-top:10px;color:var(--ink-2)}.sure b{color:var(--ink);font-weight:600}
+.why{margin-top:4px;color:var(--ink-2)}
+.next{margin-top:20px}.next h3{margin-bottom:6px}.next h3 span{font-size:12px;font-weight:400;color:var(--muted);margin-left:8px}
+.facts{margin:0;padding:0;list-style:none}
+.facts li{display:grid;grid-template-columns:136px minmax(0,1fr);gap:12px;align-items:baseline;min-height:38px;padding:7px 0;border-top:1px solid var(--grid)}
+.facts li:last-child{border-bottom:1px solid var(--grid)}
+.facts b{font-size:17px;font-weight:600;white-space:nowrap}
+.facts b.nm{font-size:14px;display:inline-flex;align-items:center;gap:6px}
+.facts span{color:var(--ink-2)}
+.facts small{font-size:12px;color:var(--muted);margin-left:6px;white-space:nowrap}
 
-/* panels + charts */
-.panel{background:var(--surface);border:1px solid var(--hair);border-radius:6px;padding:14px 16px 10px;margin-bottom:14px;min-width:0}
-.toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
-.toolbar h2{margin:0}
-.ranges{display:flex;flex-wrap:wrap;gap:4px}
-.ranges button{font:inherit;font-size:13px;padding:4px 10px;border:1px solid var(--hair);background:transparent;color:var(--ink-2);border-radius:4px;cursor:pointer}
-.ranges button[aria-pressed="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
-.ranges button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.keyrow{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 24px;margin-bottom:4px}
-.key{display:grid;grid-template-columns:repeat(3,max-content);grid-template-rows:auto auto;grid-auto-flow:column;gap:5px 22px;font-size:12.5px;color:var(--ink-2)}
-.key span{display:inline-flex;align-items:center;gap:7px}
-.key .swatch{width:14px;height:14px}
-.keynote{font-size:12.5px;color:var(--ink-2);display:flex;flex-direction:column;gap:5px}
-.keynote span{display:inline-flex;align-items:center;gap:7px}
-.oosln{display:inline-block;width:0;height:14px;border-left:1.5px dashed var(--muted)}
-.chart{position:relative;width:100%}
-.chart svg{display:block;width:100%;height:auto;overflow:visible}
-.chart .lbl{font:11.5px "IBM Plex Mono",ui-monospace,monospace;fill:var(--muted)}
-.chart .ax{stroke:var(--axis)}
-.chart .gr{stroke:var(--grid);stroke-width:1}
-.chart .ylab{position:absolute;left:0;top:0;font-size:12.5px;color:var(--ink);font-weight:500}
-.chart .ylab small{font-size:12px;color:var(--muted);font-weight:400;margin-left:4px}
-.xh{stroke:var(--ink);stroke-width:1;stroke-dasharray:3 3;opacity:0;pointer-events:none}
-.tip{position:absolute;top:0;left:0;pointer-events:none;background:var(--surface);color:var(--ink);border:1px solid var(--hair);box-shadow:0 4px 14px rgba(0,0,0,.14);border-radius:5px;padding:8px 10px;font-size:12.5px;line-height:1.4;min-width:190px;opacity:0;transform:translate(12px,-8px);z-index:5;white-space:nowrap}
+/* what the model sees: one real mini chart per reading */
+.sees .hd{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:6px}
+.rds{list-style:none;margin:0;padding:0}
+.rd{display:grid;grid-template-columns:minmax(0,1fr) 128px 80px;grid-template-areas:"t s n" "v s n";gap:0 16px;align-items:center;padding:8px 0 9px;border-top:1px solid var(--grid)}
+.rd:last-child{border-bottom:1px solid var(--grid)}
+.rd .t{grid-area:t;display:flex;align-items:baseline;gap:8px;min-width:0}
+.rd .lab{font-weight:600;white-space:nowrap}
+.rd .nt{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.rd .v{grid-area:v;display:flex;flex-wrap:wrap;align-items:baseline;gap:0 10px;color:var(--ink-2)}
+.rd .v .u{color:var(--ink);font-weight:600}
+.rd .pt{font-size:12px;color:var(--muted)}
+.rd svg{grid-area:s;display:block;width:100%;height:auto;overflow:visible}
+.rd .n{grid-area:n;font-size:20px;font-weight:600;text-align:right;white-space:nowrap}
+.sz{fill:var(--zone);opacity:.45}
+.sl{fill:none;stroke:var(--ink);stroke-width:1.1;stroke-linejoin:round;stroke-linecap:round}
+.sd{fill:var(--ink);stroke:var(--bg);stroke-width:1.5}
+.lg{font-size:12px;color:var(--muted);margin-top:10px}
+.lg i{display:inline-block;width:24px;height:8px;background:var(--zone);opacity:.45;margin-right:6px;vertical-align:0}
+
+/* chart panel */
+.panel{position:relative;background:var(--surface);border:1px solid var(--hair);border-radius:8px;padding:16px 16px 12px}
+.tbar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 16px;margin-bottom:8px}
+.tabs{display:flex;gap:20px}
+.tabs button{font:inherit;font-size:17px;font-weight:600;background:none;border:0;border-bottom:2px solid transparent;padding:2px 0;color:var(--muted);cursor:pointer}
+.tabs button[aria-pressed="true"]{color:var(--ink);border-color:var(--ink)}
+.seg{display:inline-flex;gap:2px;padding:2px;border-radius:6px;background:var(--track)}
+.seg button{font:inherit;min-width:44px;height:32px;padding:0 10px;border:0;border-radius:4px;background:transparent;color:var(--ink-2);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);font-weight:600;box-shadow:0 0 0 1px var(--hair)}
+.chart svg{display:block;overflow:visible}
+.lbl{font-size:12px;fill:var(--muted)}
+.halo{paint-order:stroke;stroke:var(--surface);stroke-width:4px;stroke-linejoin:round}
+.gr{stroke:var(--grid)}
+.ln{fill:none;stroke:var(--ink);stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round}.ln.vx{stroke-width:1.25}
+.band{fill:var(--zone);opacity:.5}
+.f0,.m0{fill:var(--r0)}.f1{fill:var(--r1)}.m2,.f2{fill:var(--r2)}.f3{fill:var(--r3)}.m4,.f4{fill:var(--r4)}.f5{fill:var(--r5)}
+.m1{fill:url(#h1)}.m3{fill:url(#h3)}.m5{fill:url(#h5)}
+.stp{fill:var(--surface);opacity:.5}
+.un{opacity:var(--un)}
+.trn{stroke:var(--ink-2);stroke-dasharray:1 3}
+.xh{stroke:var(--ink);stroke-dasharray:3 3;opacity:0}
+.hdot{fill:var(--ink);stroke:var(--surface);stroke-width:2;opacity:0}
+.last{fill:var(--ink);stroke:var(--surface);stroke-width:2}
+.keyrow{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px 28px;margin-top:12px}
+.key{display:grid;grid-template-columns:auto repeat(3,64px);gap:4px 6px;align-items:center;font-size:12px;color:var(--muted)}
+.key .h{text-align:center}.key .c{display:flex;justify-content:center}
+.key .c .sw{width:36px;height:12px;border-radius:2px}
+.key .c.now .sw{outline:2px solid var(--ink);outline-offset:2px}
+.keynote{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.keynote .sw{opacity:var(--un);width:24px}
+.tip{position:absolute;top:0;left:0;pointer-events:none;background:var(--surface);border:1px solid var(--hair);box-shadow:0 4px 14px rgba(0,0,0,.14);border-radius:6px;padding:6px 10px;font-size:12px;line-height:1.5;opacity:0;white-space:nowrap;z-index:5}
 .tip b{font-weight:600}
-.tip .row{display:flex;justify-content:space-between;gap:14px}
-.tip .row span:last-child{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
-.tip .swatch{width:10px;height:10px;vertical-align:-1px}
 
-/* tables */
-table{border-collapse:collapse;width:100%;font-size:13px}
-th,td{padding:6px 8px;text-align:right;border-bottom:1px solid var(--grid);white-space:nowrap}
-th{color:var(--ink-2);font-weight:500;font-size:12px;white-space:normal;vertical-align:bottom;line-height:1.25}
-th:first-child,td:first-child{text-align:left}
-td:first-child{font-weight:500}
-td .swatch{width:11px;height:11px;margin-right:7px;vertical-align:-1px}
-.twrap{position:relative}
+/* fold */
+.fold{border-top:1px solid var(--hair);border-bottom:1px solid var(--hair)}
+.fold>summary{cursor:pointer;list-style:none;min-height:54px;padding:14px 0;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px}
+.fold>summary::-webkit-details-marker{display:none}
+.fold>summary h2{display:inline-flex;align-items:center;gap:10px}
+.fold>summary h2::before{content:"";width:7px;height:7px;border-right:2px solid var(--ink-2);border-bottom:2px solid var(--ink-2);transform:rotate(-45deg)}
+.fold[open]>summary h2::before{transform:rotate(45deg)}
+.fold>summary span{color:var(--muted)}
+.fb{max-width:760px;padding-bottom:24px}
+.fb>p{color:var(--ink-2);margin-bottom:14px}
+.fb h3{margin:20px 0 6px}
+.fb ul{margin:0;padding-left:18px;color:var(--ink-2)}
+.fb li+li{margin-top:4px}
+.lead{font-weight:600;margin:14px 0 2px}
 .tw{overflow-x:auto}
-.twrap.more::after{content:"";position:absolute;top:0;right:0;bottom:0;width:36px;pointer-events:none;background:linear-gradient(to right,transparent,var(--surface))}
-.scrollhint{display:none;font-size:12px;color:var(--muted);margin-top:4px}
-.twrap.more + .scrollhint{display:block}
-.heat td.h{color:var(--surface)}
-#stats th{min-width:72px}
-.note{font-size:12.5px;color:var(--ink-2);margin:8px 0 0;max-width:90ch}
+table{border-collapse:collapse;width:100%;margin-top:8px}
+th,td{padding:8px;text-align:left;border-bottom:1px solid var(--grid);vertical-align:middle;height:36px}
+th{font-size:12px;font-weight:400;color:var(--muted);line-height:1.3;vertical-align:bottom}
+td .sw{margin-right:6px}
+tr.cur td{font-weight:600}tr.all td{color:var(--muted);border-top:1px solid var(--hair)}
+.n{text-align:right}
+.note{font-size:12px;color:var(--muted);margin-top:8px}
+.tn::before{content:"· "}
+footer{font-size:12px;color:var(--muted);display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:0 16px;margin-top:-12px}
+footer a{display:inline-block;padding:12px 0}
 
-/* things to know */
-.know{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:14px}
-.know .card p{margin:0;color:var(--ink-2);font-size:13px}
-
-/* folds */
-details.fold{background:var(--surface);border:1px solid var(--hair);border-radius:6px;margin-bottom:14px;min-width:0}
-details.fold > summary{cursor:pointer;list-style:none;padding:13px 16px;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px}
-details.fold > summary::-webkit-details-marker{display:none}
-details.fold > summary h2{margin:0;display:inline-flex;align-items:center;gap:10px}
-details.fold > summary h2::before{content:"";width:7px;height:7px;border-right:2px solid var(--ink-2);border-bottom:2px solid var(--ink-2);transform:rotate(-45deg);transition:transform .15s;margin-right:2px}
-details.fold[open] > summary h2::before{transform:rotate(45deg)}
-details.fold > summary .hint{font-size:13px;color:var(--ink-2)}
-details.fold > summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
-details.fold > .body{padding:2px 16px 14px}
-.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px}
-.notes{color:var(--ink-2);font-size:13.5px;max-width:80ch}
-.notes p{margin:0 0 8px}
-.notes code{font-family:"IBM Plex Mono",monospace;font-size:12px;background:var(--accent-soft);padding:1px 4px;border-radius:3px}
-.cons{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px 24px;margin-top:6px;color:var(--ink-2);font-size:13px}
-.cons ul{margin:6px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:8px}
-.cons li{line-height:1.4}
-.cons li b{color:var(--ink)}
-.diag{font-size:13px;color:var(--ink-2);margin:0 0 14px}
-.srcbox{position:relative;margin-top:8px}
-.srcbox pre{margin:0;max-height:520px;overflow:auto;background:var(--bg);border:1px solid var(--hair);border-radius:5px;padding:14px 16px;font:12px/1.5 "IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;color:var(--ink);tab-size:4}
-.copy{position:absolute;top:8px;right:20px;font:inherit;font-size:12px;padding:4px 10px;border:1px solid var(--hair);background:var(--surface);color:var(--ink-2);border-radius:4px;cursor:pointer}
-.copy:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.eyebrow code,.sub2 code{text-transform:none;letter-spacing:0;background:var(--accent-soft);padding:1px 4px;border-radius:3px;color:var(--ink-2);font-size:12px}
-
-@media (max-width:900px){
-  .hero{grid-template-columns:minmax(0,1fr)}
-  .tiles{grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:auto auto;grid-auto-flow:column;row-gap:14px}
-  .grid2,.cons,.know{grid-template-columns:minmax(0,1fr)}
+@media (max-width:859px){
+  .grid,.grid.nosees{grid-template-columns:minmax(0,1fr);grid-template-areas:"mood" "chart" "sees" "how" "foot"}
+  .top{align-items:flex-start;flex-direction:column}.meta{text-align:left}
 }
-@media (max-width:560px){
-  .asof{text-align:left}
-  .kvs{gap:8px}
-  .kv{padding:12px}
-  .kv .v{font-size:22px}
-  .kv .v .vl{display:block;font-size:13px;margin:0 0 2px}
-  .tiles{column-gap:6px}
-  .tile{padding:9px 8px 8px;gap:4px}
-  .tile .t{font-size:12.5px;gap:5px}
-  .tile .t .swatch{width:12px;height:12px;margin-top:1px}
-  .tile .dir{display:none}
-  .tile .desc{font-size:12px;min-height:3.9em}
-  .tile .p{font-size:18px}
-  .tile .c{font-size:12px}
-  .key{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px 10px;width:100%}
-  .key span{align-items:flex-start;line-height:1.25}
-  .fc-row{grid-template-columns:minmax(0,1fr) minmax(0,.8fr) 48px}
+@media (max-width:520px){
+  .wrap{padding-top:16px}
+  .name{font-size:28px}.desc{font-size:14px}
+  .facts li{grid-template-columns:120px minmax(0,1fr)}
+  .facts small{display:block;margin:0;white-space:normal}.next h3 span{display:block;margin:0}
+  .rd{grid-template-columns:minmax(0,1fr) 112px 64px;gap:0 12px}
+  .rd .t{flex-direction:column;gap:0}.rd .nt{white-space:normal}.rd .n{font-size:17px}
+  .panel{padding:12px}
+  .panel .seg,.fold .seg{display:flex;width:100%}.seg button{flex:1;height:40px}
+  .ph{display:none}
+  th,td{padding:8px 4px}td:first-child{white-space:nowrap}.tn{display:block}.tn::before{content:none}
+  th[data-s]{font-size:0}th[data-s]::after{content:attr(data-s);font-size:12px}
+  footer{flex-direction:column;align-items:flex-start}
 }
-@media (prefers-reduced-motion:no-preference){ .tip{transition:opacity .08s} }
+@media (prefers-reduced-motion:no-preference){.tip{transition:opacity .08s}.fold>summary h2::before{transition:transform .15s}}
 </style>
-
+</head>
+<body>
 <div class="wrap">
-  <div class="hdr">
+  <header class="top">
     <div>
-      <div class="eyebrow">S&amp;P 500 · market mood model · daily</div>
       <h1>S&amp;P 500 Regime Monitor</h1>
-      <p>A statistical model sorts each trading day into one of six market moods (rising, flat or falling × calm or jittery). Updated every 15 minutes; while US markets are open, today's mood is provisional.</p>
+      <p>Which of six moods (regimes) the US stock market is in today, from a statistical model. <span class="s12 muted">Research tool, not advice.</span></p>
     </div>
-    <div class="asof" id="asof"></div>
-  </div>
+    <div class="meta" id="meta"></div>
+  </header>
+  <noscript><p>This page needs JavaScript to draw the charts.</p></noscript>
+  <p id="nodata" hidden>Data could not be loaded.</p>
 
-  <div class="hero" id="hero"></div>
-  <div class="tiles" id="tiles"></div>
+  <div class="grid" id="grid">
+    <section class="mood" id="mood" aria-live="polite"></section>
 
-  <div class="panel">
-    <div class="toolbar">
-      <h2>Price and market mood</h2>
-      <div class="ranges" id="ranges" role="group" aria-label="Date range"></div>
-    </div>
-    <div class="keyrow">
-      <div class="key" id="legend"></div>
-      <div class="keynote" id="keynote"></div>
-    </div>
-    <div class="chart" id="c-price" style="margin-top:8px"><div class="ylab">S&amp;P 500 · background = market mood<small>log scale</small></div></div>
-    <div class="chart" id="c-prob"><div class="ylab">How sure the model was</div></div>
-    <div class="chart" id="c-vix"><div class="ylab">VIX fear gauge</div></div>
-    <div class="tip" id="tip"></div>
-  </div>
+    <section class="sees" id="sees" aria-labelledby="sees-h">
+      <div class="hd"><h3 id="sees-h">What the model sees today</h3><span class="s12 muted" id="sees-since"></span></div>
+      <ul class="rds" id="rds"></ul>
+      <p class="lg" id="rd-lg"></p>
+    </section>
 
-  <div class="panel">
-    <h2>How each mood has behaved</h2>
-    <p class="sub2" id="stats-sub"></p>
-    <div class="twrap"><div class="tw"><table class="num" id="stats"></table></div></div>
-    <div class="scrollhint">Swipe the table sideways for more &rarr;</div>
-    <p class="note">These are next-day returns while in each mood, annualised, so even "bear" moods can show positive averages (markets often bounce after falls). Descriptive only, not a backtest.</p>
-  </div>
-
-  <div class="know">
-    <div class="card"><h3>Reacts 2&ndash;5 days late</h3><p>A change of mood typically takes 2 to 5 trading days to show up here.</p></div>
-    <div class="card"><h3>Uses only S&amp;P 500 + VIX</h3><p>No interest rates, credit, breadth or other markets, and nothing outside US large caps.</p></div>
-    <div class="card"><h3>Research tool, not advice</h3><p>Patterns in past data, with no trading costs. Not a trading signal or a backtest.</p></div>
-  </div>
-
-  <details class="fold">
-    <summary><h2>How it works and its limits</h2><span class="hint">Method, assumptions and known weaknesses</span></summary>
-    <div class="body">
-      <div class="notes">
-        <h3>In technical terms</h3>
-        <p>Filtered regime probabilities from a six-state Gaussian hidden Markov model (HMM) on trend momentum, VIX and multi-horizon returns. Calibrated by Baum-Welch (forward-backward) on 1990-2022; everything after is out-of-sample. During US market hours the latest day is a live, partial session.</p>
-        <h3 style="margin-top:14px">Method</h3>
-        <p><b>Observations.</b> Log returns over 1, 5, 21 and 252 trading days; trend momentum as log(close / 200-day SMA); log VIX; log 21-day realised volatility. Standardised with training-window statistics only.</p>
-        <p><b>Calibration.</b> Six-state Gaussian HMM with full covariances, fit by Baum-Welch EM (forward-backward) on data through 2022-12-30 with 8 restarts. States are anchored to the regime grid: direction from the sign of the 200-day trend and the 1-month return, volatility from the VIX median. A Gaussian prior on the state means (weight 3000 pseudo-observations) keeps each state on its definition; free EM otherwise drifts "Bear Quiet" into a positive-return dip state because persistent low-VIX bear markets barely exist in S&amp;P history.</p>
-        <p><b>Inference.</b> Filtered P(s<sub>t</sub> | y<sub>1..t</sub>) from the forward pass is what the shading and tiles show. Smoothed and Viterbi paths are computed for comparison. Entropy is the Shannon entropy of the filtered distribution divided by log 6. Tomorrow's regime forecast is filtered<sub>t</sub> × A.</p>
-        <p>In-sample log-likelihood is <span class="mono" id="ll"></span> nats per observation. Research tool, not advice.</p>
+    <section class="panel" id="panel" aria-label="Chart">
+      <div class="tbar">
+        <div class="tabs" id="tabs" role="group" aria-label="Chart"><button type="button" data-v="px">S&amp;P 500</button><button type="button" data-v="vix">Fear gauge (VIX)</button></div>
+        <div class="seg" id="ranges" role="group" aria-label="Date range"><button type="button" data-v="1Y">1Y</button><button type="button" data-v="3Y">3Y</button><button type="button" data-v="10Y">10Y</button><button type="button" data-v="All">All</button></div>
       </div>
-      <h3 style="margin-top:16px">Constraints and drawbacks</h3>
-      <div class="cons">
-        <div>
-          <div class="eyebrow">Model assumptions</div>
-          <ul>
-            <li><b>Overlapping returns break conditional independence.</b> The 1-week, 1-month and 1-year returns share most of their daily inputs, so consecutive observations are strongly autocorrelated. The HMM treats them as independent given the state, which inflates persistence and makes filtered probabilities over-confident: entropy sits near zero on most days and only spikes at transitions.</li>
-            <li><b>Gaussian emissions with fat-tailed data.</b> Daily returns and VIX changes are skewed and heavy-tailed. A crash day is an outlier under every state, so the model can flip abruptly or assign the day to Bear Volatile on magnitude alone.</li>
-            <li><b>Six states is imposed, not selected.</b> No BIC or cross-validated comparison against 2 to 8 states was run. The 3 x 2 grid is a modelling convention, not something the data asked for.</li>
-            <li><b>Time-homogeneous transitions.</b> One transition matrix for 1990 to 2026. The persistence of a regime does not depend on how long it has lasted, on macro conditions, or on the calendar.</li>
-          </ul>
-        </div>
-        <div>
-          <div class="eyebrow">Calibration and identification</div>
-          <ul>
-            <li><b>Labels are partly imposed.</b> Free EM does not produce a real "Bear Quiet" state; it must be held in place with a prior on the state means. That costs about 0.2 nats per observation of likelihood, and the anchor rule (200-day trend, 1-month return, VIX median) is a hand-chosen definition.</li>
-            <li><b>Bear Quiet is weakly identified.</b> Only 148 training days satisfy its anchor rule. Its covariance and transitions rest on a small sample, and its strong next-day returns look like dip-buying rather than a stable regime property.</li>
-            <li><b>Hyperparameters were chosen with hindsight.</b> The prior weight and anchor rule were picked after looking at full-sample outputs, so the out-of-sample split is honest for the parameters but not for those design choices.</li>
-            <li><b>EM finds local optima.</b> Eight restarts spread over roughly 100 nats of log-likelihood; a different seed set can change state shapes at the margins.</li>
-            <li><b>Static parameters.</b> Nothing is re-estimated after 2022. Structural changes such as the growth of short-dated options and the shift in VIX behaviour are not learned.</li>
-          </ul>
-        </div>
-        <div>
-          <div class="eyebrow">Data and use</div>
-          <ul>
-            <li><b>One index, one volatility gauge.</b> S&amp;P 500 price index (no dividends) and VIX. No breadth, credit spreads, rates, cross-asset or intraday information, and nothing outside US large caps.</li>
-            <li><b>Filtered calls lag.</b> Switching typically takes 2 to 5 sessions. The shading and probabilities are causal, but smoothed and Viterbi paths use future data and are not tradable.</li>
-            <li><b>Regime statistics are descriptive.</b> The next-day return table conditions on the same-day filtered label with no costs, slippage or position sizing. It is not a backtest.</li>
-            <li><b>Warm-up loss.</b> The 252-day return and 200-day average drop the first year of history, and a fresh ticker needs a year of data before the model can run.</li>
-            <li><b>Data source.</b> Free yfinance downloads with occasional gaps and revisions; the VIX methodology itself changed in 2003 and 2014.</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </details>
+      <div class="chart" id="chart" tabindex="0"></div>
+      <div class="keyrow"><div class="key" id="key" aria-label="Mood colours"></div><div class="keynote"><span class="sw" style="background:var(--r0)"></span>Faded = model unsure that day</div></div>
+      <div class="tip" id="tip" role="status"></div>
+    </section>
 
-  <details class="fold">
-    <summary><h2>Model details</h2><span class="hint">How moods switch, and what each mood looks like in numbers</span></summary>
-    <div class="body">
-      <p class="diag" id="diag"></p>
-      <div class="grid2">
-        <div>
-          <h3>How moods switch</h3>
-          <p class="sub2">Transition matrix: chance of moving from the row's mood to the column's mood the next day</p>
-          <div class="twrap"><div class="tw"><table class="heat num" id="trans"></table></div></div>
-          <div class="scrollhint">Swipe the table sideways for more &rarr;</div>
-        </div>
-        <div>
-          <h3>Typical readings in each mood</h3>
-          <p class="sub2">State centres: fitted emission means, in raw units</p>
-          <div class="twrap"><div class="tw"><table class="num" id="means"></table></div></div>
-          <div class="scrollhint">Swipe the table sideways for more &rarr;</div>
-        </div>
-      </div>
-    </div>
-  </details>
-
-  <div class="panel">
-    <div class="toolbar">
-      <h2>Source code</h2>
-      <a href="https://github.com/maxgilbertson/market-regime-hmm" rel="noopener">View the code on GitHub</a>
-    </div>
-    <p class="sub2">Python 3.12 · reproduce with <code class="mono">pip install -r requirements.txt</code> then <code class="mono">python hmm_regime.py</code> and <code class="mono">python build_dashboard.py</code></p>
-    <details class="fold" style="margin:0;border-color:var(--grid)">
-      <summary><h2 style="font-size:15px">Read the code on this page</h2></summary>
-      <div class="body">
-        <div class="ranges" id="srctabs" role="tablist" aria-label="Source files"></div>
-        <div class="srcbox">
-          <button type="button" class="copy" id="copybtn">Copy file</button>
-          <pre id="srcpre"><code id="srccode"></code></pre>
-        </div>
+    <details class="fold" id="how">
+      <summary><h2>How this works</h2><span>Method, how the moods compare, limits</span></summary>
+      <div class="fb">
+        <p id="method"></p>
+        <div class="seg" id="tbls" role="group" aria-label="Table"><button type="button" data-v="cmp">Compare</button><button type="button" data-v="sw">Switching</button><button type="button" data-v="rd">Readings</button></div>
+        <div class="tw" id="tbl"></div>
+        <h3>Keep in mind</h3>
+        <ul id="limits"></ul>
+        <p class="note" id="tech"></p>
       </div>
     </details>
+
+    <footer><span>Research tool, not advice<span id="lagline"></span></span><a href="https://github.com/maxgilbertson/market-regime-hmm" rel="noopener">Code and data on GitHub</a></footer>
   </div>
 </div>
 
 <script>
-const D = /*__DATA__*/null;
-// the GitHub Pages copy is rebuilt every 15 minutes; reload to pick up new data
-const LIVE = /\.github\.io$/.test(location.hostname);
-if (LIVE) {
-  let loadedAt = Date.now();
-  const due = () => Date.now() - loadedAt > 15 * 60 * 1000;
-  setInterval(() => { if (document.visibilityState === 'visible' && due()) location.reload(); }, 60 * 1000);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && due()) location.reload(); });
-}
-const REG = D.regimes, N = D.dates.length, K = 6;
-const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-const COL = i => cssv('--r'+i);
-const VOL = [false,true,false,true,false,true];
-// plain-English meaning and direction icon (up / flat / down) for each regime
-const DESC = ['Calm uptrend','Jittery uptrend','Calm, going nowhere','Nervous, going nowhere','Calm slide','Stressed sell-off'];
-const DIR = ['&#9650;','&#9650;','&#9644;','&#9644;','&#9660;','&#9660;'];
-const S = D.summary;
-const fmt = {
-  pct: v => (v*100).toFixed(1)+'%',
-  pct0: v => (v*100).toFixed(0)+'%',
-  n0: v => v.toLocaleString(undefined,{maximumFractionDigits:0}),
-  n1: v => v.toFixed(1),
-  n2: v => v.toFixed(2),
-  n3: v => v.toFixed(3),
-  date: s => { const d=new Date(s+'T00:00:00'); return d.toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}); },
-  dm: s => { const d=new Date(s+'T00:00:00'); return d.toLocaleDateString(undefined,{day:'numeric',month:'short'}); },
-  my: s => { const d=new Date(s+'T00:00:00'); return d.toLocaleDateString(undefined,{month:'short',year:'numeric'}); },
-  sgn: v => (v>=0?'+':'')+(v*100).toFixed(1)+'%',
+let D = /*__DATA__*/null;
+const $ = id => document.getElementById(id);
+const VOL = [0,1,0,1,0,1], DESC = ['Calm uptrend','Jittery uptrend','Calm, going nowhere','Nervous, going nowhere','Calm slide','Stressed sell-off'];
+const MONS = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' '), WD = 'Sun Mon Tue Wed Thu Fri Sat'.split(' ');
+const DAY = 864e5, MI = '−';
+let REG, S, cur, SE, N, day, T0, RD = {};
+function section(id, fn){ try{ fn(); }catch(e){ const el=$(id); if(el) el.innerHTML='<span class="muted">—</span>'; console.warn(id, e); } }
+const iso2t = s => Date.UTC(+s.slice(0,4), +s.slice(5,7)-1, +s.slice(8,10));
+const ok = v => v!=null && isFinite(v);
+const F = {
+  pct: p => p>0.995 ? '>99%' : p<0.005 ? '<1%' : Math.round(p*100)+'%',
+  n0: v => Math.round(v).toLocaleString('en-GB'),
+  sg: (v,d) => { const a=Math.abs(v).toFixed(d); return (+a===0?'':v<0?MI:'+')+a; },
+  rd: (r,v) => { const a=Math.abs(v).toFixed(r.dp); return (+a===0?'':v<0?MI:r.signed?'+':'')+a+(r.unit||''); },
+  oneIn: p => p>=0.5 ? Math.round(p*10)+' in 10' : p<0.02 ? 'under 1 in 50' : '1 in '+Math.round(1/p),
+  dur: d => d<10 ? Math.round(d)+' days' : 'about '+Math.round(d/5)+' weeks',
+  dm: s => { const t=new Date(iso2t(s)), y=t.getUTCFullYear(); return t.getUTCDate()+' '+MONS[t.getUTCMonth()]+(y!==+S.as_of.slice(0,4)?' '+y:''); },
+  day: off => { const t=new Date(T0+off*DAY); return `${WD[t.getUTCDay()]} ${t.getUTCDate()} ${MONS[t.getUTCMonth()]} ${t.getUTCFullYear()}`; },
 };
-// HTML swatches and bars use the CSS variables so they follow a theme change; SVG charts bake hex values and are redrawn
-const CV = k => `var(--r${k})`;
-const sw = k => `<span class="swatch${VOL[k]?' hatch':''}" style="background-color:${CV(k)}"></span>`;
-const fillCls = k => VOL[k] ? ' class="hatch"' : '';
-const signed = v => `<span class="${v>=0?'up':'dn'}">${fmt.sgn(v)}</span>`;
-const last = N-1, cur = D.regime[last];
-const lastProbs = REG.map((_,k)=>D.probs[k][last]);
-const fl = S.features_last;
-
-/* ---------- data date + staleness ---------- */
-// Trading days (weekdays) the data is behind, judged against the visitor's clock in New York time.
-function tradingDaysBehind(asOf){
-  try{
-    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})
-      .formatToParts(new Date()).map(p=>[p.type,p.value]));
-    let t = Date.UTC(+parts.year, +parts.month-1, +parts.day);
-    const mins = (+parts.hour)*60 + (+parts.minute);
-    const isWd = ms => { const w=new Date(ms).getUTCDay(); return w>0 && w<6; };
-    // the latest session that should exist: today once the market has opened (9:30 ET), otherwise the previous weekday
-    if (!(isWd(t) && mins >= 570)) { do { t -= 864e5; } while(!isWd(t)); }
-    const a = Date.UTC(+asOf.slice(0,4), +asOf.slice(5,7)-1, +asOf.slice(8,10));
-    let n = 0; for (let d=a+864e5; d<=t; d+=864e5) if (isWd(d)) n++;
-    return n;
-  }catch(e){ return 0; }
+const word = p => p>=0.9 ? 'very sure' : p>=0.7 ? 'fairly sure' : p>=0.5 ? 'leaning' : 'unsure';
+const sw = (k,c='') => `<span class="sw${VOL[k]?' v':''}${c?' '+c:''}" style="background-color:var(--r${k})"></span>`;
+const andList = a => a.length>1 ? a.slice(0,-1).join(', ')+' and '+a[a.length-1] : (a[0]||'');
+function ny(now){
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit',weekday:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(now).map(x=>[x.type,x.value]));
+  const m = (+p.hour)*60 + (+p.minute), wk = !['Sat','Sun'].includes(p.weekday);
+  return {date:`${p.year}-${p.month}-${p.day}`, m, wk, open: wk && m>=570 && m<=975};
 }
-{
-  const upd = S.updated_at_utc ? new Date(S.updated_at_utc) : null;
-  let updTxt = null;
-  if (upd && !isNaN(upd)) {
-    const sameDay = upd.toDateString() === new Date().toDateString();
-    updTxt = upd.toLocaleString(undefined, sameDay ? {hour:'2-digit',minute:'2-digit',timeZoneName:'short'}
-                                                   : {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',timeZoneName:'short'});
+function derive(){
+  REG = D.regimes; S = D.summary; cur = REG.indexOf(S.regime); SE = D.series; N = SE.c.length; T0 = iso2t(D.d0);
+  day = new Int32Array(N); let a=0; for(let i=0;i<N;i++){ a+=SE.dd[i]; day[i]=a; }
+  RD = Object.fromEntries((D.readings||[]).map(r=>[r.key,r]));
+}
+
+/* ---------- header meta + freshness ---------- */
+function drawMeta(){
+  const now=new Date(), z=ny(now), up=S.updated_at_utc ? new Date(S.updated_at_utc) : null, wd=t=>new Date(t).getUTCDay();
+  let h = `Data to <b>${F.dm(S.as_of)}</b>` + (ok(S.close) ? ` · S&amp;P 500 <b>${F.n0(S.close)}</b>` + (ok(S.close_chg_1d) ? ` (${F.sg(S.close_chg_1d*100,1)}%)` : '') : '');
+  let e = iso2t(z.date);                                     // latest NY session that should be in the data
+  if (!z.wk || z.m<570) do { e-=DAY; } while (!(wd(e)%6));
+  let behind=0; for (let t=iso2t(S.as_of)+DAY; t<=e; t+=DAY) if (wd(t)%6) behind++;
+  let pill = behind>=2 ? `Update delayed · ${behind} trading days behind` : '';
+  if (up && !isNaN(up)) {
+    const mins=(now-up)/6e4, ago = mins<60 ? `${Math.max(1,Math.round(mins))} min ago` : mins<2880 ? `${Math.round(mins/60)} h ago` : `${Math.round(mins/1440)} days ago`;
+    h += `<br><span title="${up.toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',timeZoneName:'short'})}">Updated ${ago}</span>`;
+    if (!pill && mins>(z.open?45:1560)) pill = `Live updates paused since ${up.toLocaleString('en-GB', mins<1440 ? {hour:'2-digit',minute:'2-digit'} : {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}`;
   }
-  const behind = tradingDaysBehind(S.as_of);
-  document.getElementById('asof').innerHTML =
-    'Data to '+fmt.date(S.as_of) + (updTxt ? ' · updated '+updTxt : '')
-    + (behind >= 2 ? `<br><span class="stale" title="The automatic update has not added new prices for about ${behind} trading days">Update delayed · ${behind} trading days behind</span>` : '');
-}
-document.getElementById('ll').textContent = S.loglik_per_obs_train.toFixed(3);
-
-/* ---------- hero: today's mood ---------- */
-{
-  const rank = REG.map((_,k)=>k).sort((a,b)=>lastProbs[b]-lastProbs[a]);
-  const p1 = lastProbs[cur], second = rank.find(k=>k!==cur), p2 = lastProbs[second];
-  const level = p1 >= .8 ? 'High' : p1 >= .6 ? 'Medium' : 'Low';
-  let conf = `Confidence: <b>${level}</b> <span class="mono">(${fmt.pct(p1)})</span>`;
-  if (p1 - p2 < .10) conf += ` · almost a tie with ${REG[second]} <span class="mono">(${fmt.pct(p2)})</span>`;
-  else if (level !== 'High') conf += ` · next most likely: ${REG[second]} <span class="mono">(${fmt.pct(p2)})</span>`;
-  const T = S.predicted_probs_tomorrow || {};
-  const tk = REG.map((_,k)=>k).filter(k=>T[REG[k]]!=null).sort((a,b)=>T[REG[b]]-T[REG[a]]).slice(0,2);
-  const fc = tk.map(k=>`<div class="fc-row"><span class="nm">${sw(k)}${REG[k]}</span><span class="track"><i${fillCls(k)} style="width:${Math.max(1.5,T[REG[k]]*100)}%;background-color:${CV(k)}"></i></span><span class="pc mono">${fmt.pct(T[REG[k]])}</span></div>`).join('');
-  const kv = (label, v, d) => `<div class="card kv"><div class="eyebrow">${label}</div><div class="v">${v}</div><div class="d">${d}</div></div>`;
-  const big = v => `<span class="mono ${v>=0?'up':'dn'}">${fmt.sgn(v)}</span>`;
-  document.getElementById('hero').innerHTML = `
-  <div class="card call" style="--call-color:${CV(cur)}">
-    <div class="eyebrow">Today's market mood</div>
-    <div class="name">${sw(cur)}${REG[cur]}</div>
-    <div class="mean">${DESC[cur]}</div>
-    <div class="conf">${conf}</div>
-    ${fc ? `<div class="fc"><div class="eyebrow">Tomorrow's forecast</div>${fc}</div>` : ''}
-  </div>
-  <div class="kvs">
-    ${kv('S&amp;P 500 close', `<span class="mono">${fmt.n0(S.close)}</span>`, `1 day ${signed(fl.ret_1d)}`)}
-    ${kv('VIX fear gauge', `<span class="mono">${fmt.n2(S.vix)}</span>`, `actual swings (1 month) <span class="mono">${fmt.pct(Math.exp(fl.log_rv21))}</span>`)}
-    ${kv('Momentum', `<span class="vl">Past month</span>${big(fl.ret_1m)}`, `past week ${signed(fl.ret_1w)}`)}
-    ${kv('Trend', big(fl.trend_mom), `vs 200-day average · past year ${signed(fl.ret_1y)}`)}
-  </div>`;
+  $('meta').innerHTML = h + (pill ? `<span class="pill">${pill}</span>` : '');
 }
 
-/* ---------- tiles ---------- */
-// average spell length, in weeks (5 trading days) once it is long enough to say so plainly
-const spell = d => d >= 10 ? `~${Math.round(d/5)} weeks` : `~${Math.round(d)} trading days`;
-document.getElementById('tiles').innerHTML = REG.map((r,k)=>`
-  <div class="tile${k===cur?' current':''}">
-    <div class="t">${sw(k)}<span><span class="dir" aria-hidden="true">${DIR[k]}</span>${r}</span></div>
-    <div class="desc">${DESC[k]}</div>
-    ${k===cur?'<span class="now">Now</span>':''}<div class="p mono">${fmt.pct(lastProbs[k])}</div>
-    <div class="bar"><i${fillCls(k)} style="width:${Math.max(1.5,lastProbs[k]*100)}%;background-color:${CV(k)}"></i></div>
-    <div class="c" title="About ${Math.round(D.stats.expected_duration_days[k])} trading days on average">Usually lasts ${spell(D.stats.expected_duration_days[k])}</div>
-  </div>`).join('');
+/* ---------- mood ---------- */
+function drawMood(){
+  const P = REG.map(r=>S.probs?.[r] ?? 0), p1 = P[cur], k2 = REG.map((r,k)=>k).filter(k=>k!==cur).sort((a,b)=>P[b]-P[a])[0];
+  const z = ny(new Date()), prov = S.session==='open' || (z.open && S.as_of===z.date);
+  let sure = `Model is <b>${word(p1)}</b> (${F.pct(p1)})`;
+  if (P[k2]>=0.15) sure += ` · could be ${REG[k2]} (${F.pct(P[k2])})`;
+  const since = S.spell_start ? ` · since ${F.dm(S.spell_start)} (${S.spell_days} trading day${S.spell_days===1?'':'s'})` : '';
+  const why = S.why ? `<p class="why">Mainly because ${S.why}${S.why_against ? ', but '+S.why_against : ''}.</p>` : '';
+  const O = D.outlook?.[S.regime], A = D.outlook_all || {}, Q = D.outlook_oos, q = Q?.[S.regime];
+  const tr = S.train || {}, per = (D.period ? D.period.split(',')[0] : '') + (S.stats_source==='walk-forward' ? ' · walk-forward' : tr.refit==='fixed' && tr.end ? ` · model fitted to ${String(tr.end).slice(0,4)}` : '');
+  const after = (v, f) => q && ok(q[v]) ? ` · since ${Q.since} ${f(q[v])}` : '';
+  let rows = '';
+  if (O) {
+    if (ok(O.spell)) rows += `<li><b>${F.dur(O.spell)}</b><span>how long this mood usually lasts</span></li>`;
+    if (ok(O.move)) rows += `<li><b>±${(O.move*100).toFixed(1)}%</b><span>typical move in the following month${ok(A.move)?`<small>all days ±${(A.move*100).toFixed(1)}%${after('move', v=>'±'+(v*100).toFixed(1)+'%')}</small>`:''}</span></li>`;
+    if (ok(O.fall5)) rows += `<li><b>${F.oneIn(O.fall5)}</b><span>how often a 5% drop followed within a month${ok(A.fall5)?`<small>all days ${F.oneIn(A.fall5)}${after('fall5', F.oneIn)}</small>`:''}</span></li>`;
+    if (REG.includes(O.to) && ok(O.to_share)) rows += `<li><b class="nm">${sw(REG.indexOf(O.to))}${O.to}</b><span>what it most often turns into<small>${Math.round(O.to_share*10)} in 10 times</small></span></li>`;
+  }
+  $('mood').innerHTML = `<div class="kicker">Today's mood${prov?'<span class="pill info">Provisional · US market open</span>':''}</div>
+    <h2 class="name">${sw(cur,'lg')}${REG[cur]}</h2>
+    <p class="desc">${DESC[cur]}<span class="since">${since}</span></p>
+    <p class="sure">${sure}</p>${why}
+    ${rows ? `<div class="next"><h3>What usually happens next${per ? `<span>${per}</span>` : ''}</h3><ul class="facts">${rows}</ul></div>` : ''}`;
+}
 
-/* ---------- key + ranges ---------- */
+/* ---------- what the model sees: real mini charts ---------- */
+function spark(r){
+  const v = (r.spark||[]).filter(ok); if (v.length<2) return '<span></span>';
+  const W=128, H=38, pd=3; let lo=Math.min(...v), hi=Math.max(...v);
+  if (ok(r.p30)) lo=Math.min(lo,r.p30); if (ok(r.p70)) hi=Math.max(hi,r.p70);
+  const g=(hi-lo)*0.06 || 1; lo-=g; hi+=g;
+  const X = i => (pd + i*(W-2*pd)/(v.length-1)).toFixed(1), Y = x => pd + (H-2*pd)*(1-(x-lo)/(hi-lo));
+  const band = ok(r.p30)&&ok(r.p70) ? `<rect class="sz" x="0" width="${W}" y="${Y(r.p70).toFixed(1)}" height="${(Y(r.p30)-Y(r.p70)).toFixed(1)}"/>` : '';
+  return `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true">${band}<path class="sl" d="M${v.map((x,i)=>X(i)+' '+Y(x).toFixed(1)).join('L')}"/><circle class="sd" r="3" cx="${X(v.length-1)}" cy="${Y(v[v.length-1]).toFixed(1)}"/></svg>`;
+}
+function drawSees(){
+  const rs = (D.headline||[]).map(k=>RD[k]).filter(r=>r && ok(r.value));
+  $('grid').classList.toggle('nosees', !rs.length); $('sees').hidden = !rs.length;
+  if (!rs.length) return;
+  const yr = D.d0.slice(0,4);
+  $('sees-since').textContent = `vs every day since ${yr}`;
+  $('rds').innerHTML = rs.map(r => {
+    const p = r.push && r.push.strength>=0.3 ? `<span class="pt" title="On its own, this reading points to ${r.push.toward} moods">points to ${r.push.toward}</span>` : '';
+    const t = ok(r.p30) ? `Usual range ${F.rd(r,r.p30)} to ${F.rd(r,r.p70)}; higher than ${Math.round(r.pct*100)}% of days since ${yr}. Line: last 12 months.` : '';
+    return `<li class="rd" title="${t}"><div class="t"><span class="lab">${r.label}</span><span class="nt">${r.note||''}</span></div>${spark(r)}<b class="n">${F.rd(r,r.value)}</b><div class="v"><span class="${r.unusual?'u':''}">${r.verdict||''}</span>${p}</div></li>`;
+  }).join('');
+  $('rd-lg').innerHTML = `<i></i>usual range (middle 40% of days since ${yr}) · line: past 12 months · dot: today`;
+}
+
+/* ---------- key ---------- */
 function drawKey(){
-  document.getElementById('legend').innerHTML = REG.map((r,k)=>`<span>${sw(k)}${r}</span>`).join('');
-  document.getElementById('keynote').innerHTML = `<span><span class="oosln"></span>live (unseen by the model) since ${fmt.my(D.dates[D.oosStart])}</span>`;
+  const cell = k => `<span class="c${k===cur?' now':''}" title="${REG[k]}: ${DESC[k]}">${sw(k)}</span>`;
+  $('key').innerHTML = `<span></span><span class="h">Bull</span><span class="h">Sideways</span><span class="h">Bear</span><span>Quiet</span>${cell(0)}${cell(2)}${cell(4)}<span>Volatile</span>${cell(1)}${cell(3)}${cell(5)}`;
 }
-drawKey();
-const RANGES = ['1Y','3Y','5Y','10Y','All'];
-let range = window.matchMedia('(max-width: 599px)').matches ? '1Y' : '10Y';
-try{ const r=localStorage.getItem('regime-range'); if(RANGES.includes(r)) range=r; }catch(e){}
-const rg = document.getElementById('ranges');
-function drawRanges(){ rg.innerHTML = RANGES.map(r=>`<button type="button" id="rng-${r}" aria-pressed="${r===range}">${r}</button>`).join(''); }
-rg.addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; range=b.textContent; try{localStorage.setItem('regime-range',range);}catch(x){} drawRanges(); render(); });
-drawRanges();
 
-/* ---------- chart helpers ---------- */
-function rangeStart(){
-  const yrs={'1Y':1,'3Y':3,'5Y':5,'10Y':10}[range]; if(!yrs) return 0;
-  const d=new Date(D.dates[last]+'T00:00:00'); d.setFullYear(d.getFullYear()-yrs);
-  const iso=d.toISOString().slice(0,10); let i=0; while(i<N && D.dates[i]<iso) i++; return i;
+/* ---------- chart ---------- */
+const RANGES = {'1Y':1,'3Y':3,'10Y':10,'All':0};
+let range = matchMedia('(max-width:859px)').matches ? '1Y' : '3Y', tab = 'px', C = null;
+try { const r=localStorage.getItem('regime.range'), t=localStorage.getItem('regime.tab'); if (r in RANGES) range=r; if (t==='px'||t==='vix') tab=t; } catch(e) {}
+function seg(id, get, set){
+  const el=$(id), mark=()=>el.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.v===get()));
+  el.addEventListener('click', e => { const b=e.target.closest('button'); if(!b) return; set(b.dataset.v); mark(); });
+  mark();
 }
-function niceTicks(lo,hi,n){
-  const span=hi-lo, raw=span/Math.max(1,n), p=Math.pow(10,Math.floor(Math.log10(raw)));
-  const f=raw/p, step=(f<1.5?1:f<3?2:f<7?5:10)*p, out=[];
-  for(let v=Math.ceil(lo/step)*step; v<=hi+1e-9; v+=step) out.push(+v.toFixed(10));
+seg('ranges', ()=>range, v=>{ range=v; try{localStorage.setItem('regime.range',v);}catch(e){} hide(); section('chart',render); });
+seg('tabs', ()=>tab, v=>{ tab=v; try{localStorage.setItem('regime.tab',v);}catch(e){} hide(); section('chart',render); });
+
+const MT=8, GAP=6, RIB=14, AX=22;
+function logTicks(lo, hi, Y, minPx){
+  let best=[];
+  for (const L of [[1,2,5],[1,1.5,2,3,4,5,6,7,8],[1,1.5,2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,7.5,8,8.5,9,9.5]]){
+    const c=[]; for (let e=Math.floor(Math.log10(lo));e<=Math.ceil(Math.log10(hi));e++) for (const m of L){ const v=m*10**e; if(v>=lo&&v<=hi) c.push(v); }
+    c.sort((a,b)=>b-a); const k=[]; for (const v of c) if (!k.length || Y(v)-Y(k[k.length-1])>=minPx) k.push(v);
+    if (k.length>best.length) best=k; if (best.length>=3 || k.length<c.length) break;
+  }
+  return best;
+}
+function timeTicks(d0, d1, X, nar){
+  const out=[], y0=new Date(T0+d0*DAY).getUTCFullYear(), y1=new Date(T0+d1*DAY).getUTCFullYear(), at=(y,m)=>(Date.UTC(y,m,1)-T0)/DAY;
+  if (d1-d0 < 400) { const st=nar?3:2; for(let y=y0;y<=y1;y++) for(let m=0;m<12;m+=st){ const o=at(y,m); if(o>=d0&&o<=d1) out.push([o, m?MONS[m]:String(y)]); } return out; }
+  const pxy=X(d0+365.25)-X(d0), every=[1,2,5,10].find(n=>n*pxy>=56)||20;
+  for (let y=y0;y<=y1;y++) if (y%every===0){ const o=at(y,0); if(o>=d0&&o<=d1) out.push([o,String(y)]); }
   return out;
 }
-// x-axis ticks spaced by pixels so labels never collide: quarters on short ranges, then every 1/2/5/10/20 years
-const MIN_LABEL_PX = 44;
-function timeTicks(i0, IW){
-  const n = N-i0, pxDay = IW/Math.max(1,n-1), years=[], quarters=[];
-  for(let i=i0+1;i<N;i++){
-    const a=D.dates[i-1], b=D.dates[i];
-    if(a.slice(0,4)!==b.slice(0,4)) years.push([i,b.slice(0,4)]);
-    if(a.slice(5,7)!==b.slice(5,7) && ['01','04','07','10'].includes(b.slice(5,7)))
-      quarters.push([i, b.slice(5,7)==='01' ? b.slice(0,4) : new Date(b+'T00:00:00').toLocaleDateString(undefined,{month:'short'})]);
-  }
-  if (n < 600 && 63*pxDay >= MIN_LABEL_PX) return quarters;
-  for (const every of [1,2,5,10,20]) if (252*every*pxDay >= MIN_LABEL_PX) return years.filter(([,y])=>+y%every===0);
-  return years.filter(([,y])=>+y%20===0);
-}
-const ML=56, MR=10, MT=22;
-const charts = {};
-function patterns(id){
-  const bv=cssv('--band-v'), bs=cssv('--band-s');
-  // hv = volatile background band (tinted wash + stripes in the regime colour); hs = volatile solid fill (stripes in the surface colour)
-  return `<defs>${[1,3,5].map(k=>`<pattern id="hv${k}-${id}" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="6" height="6" fill="${COL(k)}" opacity="${bv}"/><rect width="1.7" height="6" fill="${COL(k)}" opacity="${bs}"/></pattern>`
-    +`<pattern id="hs${k}-${id}" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="6" height="6" fill="${COL(k)}"/><rect width="2" height="6" fill="var(--surface)" opacity=".5"/></pattern>`).join('')}</defs>`;
-}
-function frame(id,H,MB,i0,yScale,yTicks,yFmt,body,showX){
-  const el=document.getElementById(id), W=Math.max(300,el.clientWidth), IW=W-ML-MR, IH=H-MT-MB, n=N-i0;
-  const x=i=>ML+(i-i0)/(n-1)*IW;
-  let s=`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-label="${id}">`;
-  s+=patterns(id);
-  for(const v of yTicks){ const y=yScale(v); s+=`<line class="gr" x1="${ML}" x2="${W-MR}" y1="${y}" y2="${y}"/><text class="lbl" x="${ML-6}" y="${y+4}" text-anchor="end">${yFmt(v)}</text>`; }
-  for(const [i,lab] of timeTicks(i0,IW)){ const xx=x(i); s+=`<line class="gr" x1="${xx}" x2="${xx}" y1="${MT}" y2="${H-MB}"/>`; if(showX) s+=`<text class="lbl" x="${xx}" y="${H-4}" text-anchor="middle">${lab}</text>`; }
-  if(D.oosStart>i0){ const xx=x(D.oosStart); s+=`<line x1="${xx}" x2="${xx}" y1="${MT}" y2="${H-MB}" stroke="var(--muted)" stroke-dasharray="4 3"/>`; }
-  s+=body(x,IW,IH);
-  s+=`<line class="ax" x1="${ML}" x2="${W-MR}" y1="${H-MB}" y2="${H-MB}"/>`;
-  s+=`<line class="xh" id="xh-${id}" y1="${MT}" y2="${H-MB}" x1="0" x2="0"/>`;
-  s+=`<rect id="ov-${id}" x="${ML}" y="${MT}" width="${IW}" height="${IH}" fill="transparent" style="cursor:crosshair"/>`;
-  s+='</svg>';
-  el.querySelectorAll('svg').forEach(o=>o.remove()); el.insertAdjacentHTML('beforeend',s);
-  charts[id]={x,i0,n,W,H,IW,ML};
-}
-function bandRects(x,i0,y0,y1,id){
-  let out='', start=i0, half=(x(i0+1)-x(i0))/2; const bq=cssv('--band-q');
-  for(let i=i0+1;i<=N;i++){
-    if(i===N||D.regime[i]!==D.regime[start]){
-      const k=D.regime[start], xa=x(start)-half, xb=x(i-1)+half;
-      out+=`<rect x="${xa.toFixed(1)}" y="${y0}" width="${(xb-xa).toFixed(1)}" height="${y1-y0}" ${VOL[k]?`fill="url(#hv${k}-${id})"`:`fill="${COL(k)}" opacity="${bq}"`}/>`;
-      start=i;
-    }
-  }
-  return out;
-}
-function linePath(x,y,i0,arr){ let p=''; for(let i=i0;i<N;i++) p+=(i===i0?'M':'L')+x(i).toFixed(1)+' '+y(arr[i]).toFixed(1); return p; }
-
-/* ---------- render ---------- */
 function render(){
-  const i0=rangeStart(), narrow=document.getElementById('c-price').clientWidth<500;
-  // price (log) with mood shading
-  {
-    const H=narrow?250:300, MB=20, IH=H-MT-MB; let lo=Infinity,hi=-Infinity;
-    for(let i=i0;i<N;i++){ const v=D.close[i]; if(v<lo)lo=v; if(v>hi)hi=v; }
-    const llo=Math.log(lo*0.97), lhi=Math.log(hi*1.03);
-    const y=v=>MT+IH*(1-(Math.log(v)-llo)/(lhi-llo));
-    const ticks=niceTicks(lo,hi,narrow?4:5);
-    frame('c-price',H,MB,i0,y,ticks,fmt.n0,(x,IW)=>bandRects(x,i0,MT,H-MB,'c-price')
-      +`<path d="${linePath(x,y,i0,D.close)}" fill="none" stroke="var(--ink)" stroke-width="1.4"/>`
-      +`<circle id="dot-c-price" r="4" fill="var(--ink)" stroke="var(--surface)" stroke-width="2" opacity="0"/>`,true);
-    charts['c-price'].y=y;
-  }
-  // stacked probabilities (no outline: thin outlines showed as dark spikes in dark mode)
-  {
-    const H=narrow?140:170, MB=8, IH=H-MT-MB, y=v=>MT+IH*(1-v);
-    frame('c-prob',H,MB,i0,y,[0,.5,1],fmt.pct0,(x)=>{
-      let s='', cum=new Float64Array(N).fill(0);
-      for(let k=0;k<K;k++){
-        let top='', bot='';
-        for(let i=i0;i<N;i++){ const c1=cum[i]+D.probs[k][i]; top+=(i===i0?'M':'L')+x(i).toFixed(1)+' '+y(c1).toFixed(1); }
-        for(let i=N-1;i>=i0;i--){ bot+='L'+x(i).toFixed(1)+' '+y(cum[i]).toFixed(1); }
-        s+=`<path d="${top}${bot}Z" fill="${VOL[k]?`url(#hs${k}-c-prob)`:COL(k)}"/>`;
-        for(let i=i0;i<N;i++) cum[i]+=D.probs[k][i];
-      }
-      return s;
-    },false);
-  }
-  // vix
-  {
-    const H=narrow?130:150, MB=20, IH=H-MT-MB; let hi=0; for(let i=i0;i<N;i++) if(D.vix[i]>hi) hi=D.vix[i];
-    hi=Math.ceil(hi/10)*10; const y=v=>MT+IH*(1-v/hi);
-    frame('c-vix',H,MB,i0,y,niceTicks(0,hi,4),fmt.n0,(x)=>`<path d="${linePath(x,y,i0,D.vix)}" fill="none" stroke="var(--ink-2)" stroke-width="1.2"/>`,true);
-  }
-  wireHover();
+  const el=$('chart'), W=Math.max(280, Math.round(el.clientWidth)), nar=W<520;
+  const ML=nar?36:48, MR=12, PH=nar?200:250, rb=MT+PH+GAP, H=rb+RIB+AX, IW=W-ML-MR, vix=tab==='vix';
+  const d1=day[N-1], d0=range==='All' ? 0 : Math.max(0, d1-Math.round(RANGES[range]*365.25));
+  let i0=0; while (i0<N-1 && day[i0]<d0) i0++;
+  const X = d => ML+(d-d0)/(d1-d0)*IW, get = vix ? i=>SE.v[i]/10 : i=>SE.c[i];
+  let lo=Infinity, hi=-Infinity; for (let i=i0;i<N;i++){ const v=get(i); if(v<lo) lo=v; if(v>hi) hi=v; }
+  let Y, ticks, yl;
+  if (vix) { const top=Math.ceil(hi/10)*10; Y=v=>MT+PH*(1-v/top); const st=PH/(top/10)>=(nar?30:36)?10:20; ticks=[]; for(let v=0;v<=top;v+=st) ticks.push(v); yl=String; }
+  else { const a=Math.log(lo*0.98), b=Math.log(hi*1.02); Y=v=>MT+PH*(1-(Math.log(v)-a)/(b-a)); ticks=logTicks(lo*0.98, hi*1.02, Y, nar?30:36);
+    yl = v => nar && v>=1000 ? (v/1000).toLocaleString('en-GB',{maximumFractionDigits:1})+'k' : F.n0(v); }
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><defs>` + [1,3,5].map(k=>`<pattern id="h${k}" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="6" height="6" class="f${k}"/><rect width="2" height="6" class="stp"/></pattern>`).join('') + `</defs><g aria-hidden="true">`;
+  for (const v of ticks){ const y=Y(v).toFixed(1); s+=`<line class="gr" x1="${ML}" x2="${W-MR}" y1="${y}" y2="${y}"/><text class="lbl" x="${ML-6}" y="${+y+4}" text-anchor="end">${yl(v)}</text>`; }
+  for (const [o,lab] of timeTicks(d0,d1,X,nar)) s+=`<text class="lbl" x="${X(o).toFixed(1)}" y="${H-4}" text-anchor="middle">${lab}</text>`;
+  const rv = RD.log_vix;
+  if (vix && rv && ok(rv.p30) && ok(rv.p70)) { const ya=Y(rv.p70), yb=Y(rv.p30); s+=`<rect class="band" x="${ML}" width="${IW}" y="${ya.toFixed(1)}" height="${(yb-ya).toFixed(1)}"/>`; }
+  // line: first / min / max / last per pixel column
+  const pts=[]; let col=-1, f, mn, mx, l;
+  const flush = () => { if (col<0) return; let prev=-1; for (const i of [f,mn,mx,l].sort((a,b)=>a-b)) if (i!==prev){ pts.push(X(day[i]).toFixed(1)+' '+Y(get(i)).toFixed(1)); prev=i; } };
+  for (let i=i0;i<N;i++){ const c=Math.round(X(day[i])); if (c!==col){ flush(); col=c; f=mn=mx=l=i; } else { if(get(i)<get(mn)) mn=i; if(get(i)>get(mx)) mx=i; l=i; } }
+  flush();
+  s += `<path class="ln${vix?' vx':''}" d="M${pts.join('L')}"/>`;
+  if (vix && rv && ok(rv.p30) && ok(rv.p70)) s += `<text class="lbl halo" x="${ML+4}" y="${(Y(rv.p70)+12).toFixed(1)}">usual range</text>`;
+  // mood ribbon: pixel buckets, each takes its most common mood; faded when most of its days were unsure
+  const bw=(range==='10Y'||range==='All')?2:1, nb=Math.ceil(IW/bw), cnt=new Uint16Array(nb*6), un=new Uint16Array(nb), tot=new Uint16Array(nb), sp=D.spans;
+  const B = d => Math.min(nb-1, Math.max(0, Math.floor((X(d)-ML)/bw)));
+  const cover = (d, fn) => { const a=B(d), b=d<d1 ? Math.max(a+1, B(d+1)) : nb; for (let q=a;q<b;q++) fn(q); };
+  let j=0;
+  for (let d=d0; d<=d1; d++){ while (j+1<sp.length && sp[j+1][0]<=d) j++; const k=sp[j][1]; cover(d, q=>{ cnt[q*6+k]++; tot[q]++; }); }
+  for (const [a,b] of D.unsure||[]) for (let d=Math.max(a,d0); d<=Math.min(b,d1); d++) cover(d, q=>un[q]++);
+  const runs=[];
+  for (let q=0;q<nb;q++){ if (!tot[q]) continue; let k=0; for (let m=1;m<6;m++) if (cnt[q*6+m]>cnt[q*6+k]) k=m;
+    const u=un[q]*2>tot[q], L=runs[runs.length-1]; if (L && L.k===k && L.u===u && L.e===q) L.e=q+1; else runs.push({k,u,a:q,e:q+1}); }
+  s += runs.map(o=>`<rect class="m${o.k}${o.u?' un':''}" x="${ML+o.a*bw}" y="${rb}" width="${Math.min(IW-o.a*bw,(o.e-o.a)*bw)}" height="${RIB}"/>`).join('');
+  // model trained up to here
+  const tr=S.train;
+  if (tr?.refit==='fixed' && tr.end) { const o=(iso2t(tr.end)-T0)/DAY; if (o>d0 && o<d1) { const x=X(o), left=W-MR-x<160;
+    s += `<line class="trn" x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${MT}" y2="${rb+RIB}"/><text class="lbl halo" x="${(x+(left?-6:6)).toFixed(1)}" y="${MT+12}" text-anchor="${left?'end':'start'}">${nar?'trained to here':'model trained up to here'}</text>`; } }
+  s += `<circle class="last" r="3.5" cx="${X(day[N-1]).toFixed(1)}" cy="${Y(get(N-1)).toFixed(1)}"/></g><line class="xh" id="xh" y1="${MT}" y2="${rb+RIB}"/><circle class="hdot" id="hd" r="4"/></svg>`;
+  el.innerHTML = s;
+  C = {X, Y, i0, d0, d1, ML, IW, W, get};
+  const span = range==='All' ? `since ${D.d0.slice(0,4)}` : `over the last ${RANGES[range]} year${RANGES[range]>1?'s':''}`;
+  el.setAttribute('role','img');
+  el.setAttribute('aria-label', `${vix?'Fear gauge (VIX)':'S&P 500 on a log scale'} ${span}, with each day's mood as a coloured strip. Now ${REG[cur]}${S.spell_start?' since '+F.dm(S.spell_start):''}.`);
+}
+/* hover, touch, keys */
+const tip=$('tip'), ch=$('chart'); let hoverI=null, hideT=null;
+function moodAt(off){ const sp=D.spans; let lo=0, hi=sp.length-1; while(lo<hi){ const m=(lo+hi+1)>>1; if(sp[m][0]<=off) lo=m; else hi=m-1; } return sp[lo][1]; }
+function nearest(dd){ let lo=C.i0, hi=N-1; while(lo<hi){ const m=(lo+hi)>>1; if(day[m]<dd) lo=m+1; else hi=m; } return (lo>C.i0 && dd-day[lo-1] < day[lo]-dd) ? lo-1 : lo; }
+function showAt(i){
+  hoverI=i; const x=C.X(day[i]), k=moodAt(day[i]), xh=$('xh'), hd=$('hd');
+  xh.setAttribute('x1',x); xh.setAttribute('x2',x); xh.style.opacity=1;
+  hd.setAttribute('cx',x); hd.setAttribute('cy',C.Y(C.get(i))); hd.style.opacity=1;
+  tip.innerHTML = `<b>${F.day(day[i])}</b><br>${sw(k)} ${REG[k]} · ${word(SE.p[i]/100)}<br>S&amp;P 500 ${F.n0(SE.c[i])} · VIX ${(SE.v[i]/10).toFixed(1)}`;
+  const sc=ch.getBoundingClientRect().width/C.W, tw=tip.offsetWidth||190;
+  let tx = ch.offsetLeft + x*sc + 12; if (tx+tw > ch.offsetLeft + ch.offsetWidth) tx = ch.offsetLeft + x*sc - tw - 12;
+  tip.style.left=Math.max(4,tx)+'px'; tip.style.top=(ch.offsetTop+4)+'px'; tip.style.opacity=1;
+}
+function hide(){ hoverI=null; tip.style.opacity=0; const a=$('xh'), b=$('hd'); if(a) a.style.opacity=0; if(b) b.style.opacity=0; }
+const later = () => { clearTimeout(hideT); hideT=setTimeout(hide,1500); };
+ch.addEventListener('pointermove', e => { if(!C) return; const r=ch.getBoundingClientRect(), px=(e.clientX-r.left)*(C.W/r.width); if(px<C.ML) return; clearTimeout(hideT); showAt(nearest(C.d0+(px-C.ML)/C.IW*(C.d1-C.d0))); }, {passive:true});
+ch.addEventListener('pointerleave', e => { if(e.pointerType==='mouse') hide(); }, {passive:true});
+ch.addEventListener('pointerup', later, {passive:true}); ch.addEventListener('touchend', later, {passive:true});
+addEventListener('scroll', () => { if(hoverI!==null) hide(); }, {passive:true});
+ch.addEventListener('keydown', e => { if(!C) return; const i=hoverI??N-1, m={ArrowLeft:i-1, ArrowRight:i+1, Home:C.i0, End:N-1};
+  if (e.key in m){ e.preventDefault(); showAt(Math.max(C.i0, Math.min(N-1, m[e.key]))); } else if (e.key==='Escape') hide(); });
+ch.addEventListener('blur', hide);
+
+/* ---------- fold ---------- */
+let tbl='cmp';
+const TABLES = {
+  cmp: () => { const O=D.outlook, A=D.outlook_all||{}, Q=D.outlook_oos, rare=REG.filter(r=>O[r]?.rare);
+    return `<p class="lead">Moods differ mostly in how bumpy the ride is, not in where prices go next.</p><table><thead><tr><th>Mood</th><th class="n ph">Share of days</th><th class="n" data-s="Typical move, next month">Typical move in the following month</th><th class="n" data-s="5% drop within a month">How often a 5% drop followed within a month</th></tr></thead><tbody>`
+    + REG.map((r,k)=>{ const o=O[r]||{}; return `<tr class="${k===cur?'cur':''}"><td>${sw(k)}${r}${o.rare?'*':''}</td><td class="n ph">${ok(o.share)?Math.round(o.share*100)+'%':''}</td><td class="n">${ok(o.move)?'±'+(o.move*100).toFixed(1)+'%':''}</td><td class="n">${ok(o.fall5)?F.oneIn(o.fall5):''}</td></tr>`; }).join('')
+    + `<tr class="all"><td>All days</td><td class="ph"></td><td class="n">${ok(A.move)?'±'+(A.move*100).toFixed(1)+'%':''}</td><td class="n">${ok(A.fall5)?F.oneIn(A.fall5):''}</td></tr></tbody></table>`
+    + `<p class="note">Measured on ${D.period||'the full history'}.${Q&&Q.all&&ok(Q.all.move)?` After the training period alone (since ${Q.since}, ${Q.all.days.toLocaleString('en-GB')} days): all days ±${(Q.all.move*100).toFixed(1)}%, ${F.oneIn(Q.all.fall5)}${Q[S.regime]?`; ${S.regime} ±${(Q[S.regime].move*100).toFixed(1)}%, ${F.oneIn(Q[S.regime].fall5)} (${Q[S.regime].days} days)`:''}.`:''} Average returns after each mood overlap widely, so they stay in the data files rather than being shown as a forecast.${rare.length?` * Rare (${rare.map(r=>Math.round(O[r].share*100)+'% of days').join(', ')}), so ${rare.length>1?'their':'its'} numbers rest on few examples.`:''}</p>`; },
+  sw: () => `<table><thead><tr><th>Mood</th><th>Usually lasts</th><th>Most often turns into</th></tr></thead><tbody>`
+    + REG.map((r,k)=>{ const o=D.outlook[r]||{}; return `<tr class="${k===cur?'cur':''}"><td>${sw(k)}${r}</td><td>${ok(o.spell)?F.dur(o.spell):''}</td><td>${REG.includes(o.to)?sw(REG.indexOf(o.to))+o.to+` <span class="muted tn">${Math.round(o.to_share*10)} in 10</span>`:''}</td></tr>`; }).join('') + `</tbody></table>`,
+  rd: () => `<table><thead><tr><th>Reading</th><th class="n">Today</th><th class="n ph">Usual range</th><th>Verdict</th><th class="ph">Points to</th></tr></thead><tbody>`
+    + (D.readings||[]).filter(r=>ok(r.value)).map(r=>`<tr><td>${r.label}</td><td class="n">${F.rd(r,r.value)}</td><td class="n ph">${ok(r.p30)?F.rd(r,r.p30)+' to '+F.rd(r,r.p70):''}</td><td>${r.verdict||''}</td><td class="ph">${r.push&&r.push.strength>=0.3?r.push.toward:''}</td></tr>`).join('') + `</tbody></table>`,
+};
+seg('tbls', ()=>tbl, v=>{ tbl=v; section('tbl', ()=>{ $('tbl').innerHTML=TABLES[tbl](); }); });
+function drawFold(){
+  const inp=S.inputs||[], cal=S.calibration, tr=S.train||{}, yr=s=>s?String(s).slice(0,4):'';
+  $('method').textContent = `Each trading day the model reads ${inp.length} things about the market (${andList(inp)}) and works out how likely each of six moods is. A mood combines direction (Bull = rising, Sideways = flat, Bear = falling) with how jittery prices are (Quiet or Volatile). ${tr.refit==='fixed' && tr.end ? `Each day's mood uses only prices up to that day, but the model's settings were learned from ${yr(tr.start)}–${yr(tr.end)}, so moods before ${+yr(tr.end)+1} are a fitted view.` : "Each day's mood uses only prices up to that day."} It re-reads the latest prices every 15 minutes while US markets are open.`
+    + (cal && ok(cal.hit) ? ` When it has said "very sure" since ${cal.since||yr(tr.start)}, its call matched its own later hindsight view ${Math.round(cal.hit*100)} times in 100.` : '');
+  section('tbl', ()=>{ $('tbl').innerHTML=TABLES[tbl](); });
+  const L=S.lag_days, rare=REG.filter(r=>D.outlook?.[r]?.rare);
+  const lagTxt = L && ok(L[0]) ? (L[0]===L[1] ? `about ${L[0]}` : `about ${L[0]}–${L[1]}`) : '';
+  $('limits').innerHTML = [
+    lagTxt && `Moods show up ${lagTxt} trading days after they start: the model waits for evidence.`,
+    tr.refit==='fixed' && tr.end ? `Its settings were learned from ${yr(tr.start)}–${yr(tr.end)} data; later days were not used to set it up.`
+      : tr.refit==='yearly' ? 'It is re-trained once a year on all data up to then.' : '',
+    S.stats_source==='walk-forward' && `The 'What usually happens next' figures come from a walk-forward version, where each year's moods were drawn by a model trained only on earlier years.`,
+    rare.length && `Rare moods (${andList(rare)}) rest on few examples.`,
+    `Bear moods describe what prices have been doing, not a forecast: markets have often risen after them.`,
+    `An upgrade was tested in October 2026 (history back to 1986, credit spreads, VIX-scaled daily moves, steadier probabilities). On unseen 2019–2026 data the best version forecast better and switched mood far less often, but it failed one check set in advance, so this model stays and the upgrade is re-tested on new data until October 2027. <a href="https://github.com/maxgilbertson/market-regime-hmm/tree/main/docs/upgrade-2026-10">Full test record</a>`,
+    `'Points to' and 'Mainly because' look at each reading on its own; the model weighs them together, so treat them as a rough guide.`,
+    'Past patterns before trading costs; not a forecast or a trading signal.',
+  ].filter(Boolean).map(t=>`<li>${t}</li>`).join('');
+  $('tech').innerHTML = `Six-state Gaussian hidden Markov model · filtered (forward-only) probabilities · ${cal?.method || 'raw model probabilities'}`
+    + (tr.end ? ` · trained ${yr(tr.start)}–${yr(tr.end)}` : '') + ` · Raw data: <a href="data/summary.json">summary.json</a> · <a href="data/regime_history.csv">full history (CSV)</a>`;
+  $('lagline').textContent = lagTxt ? ` · Moods show up ${lagTxt} trading days late` : '';
 }
 
-/* ---------- hover ---------- */
-const tip=document.getElementById('tip');
-function wireHover(){
-  for(const id of Object.keys(charts)){
-    const ov=document.getElementById('ov-'+id);
-    ov.onmousemove=ov.ontouchstart=ov.ontouchmove=e=>{
-      const pt=e.touches?e.touches[0]:e; const svg=ov.ownerSVGElement, r=svg.getBoundingClientRect();
-      const c=charts[id], px=(pt.clientX-r.left)*(c.W/r.width);
-      const i=Math.max(c.i0,Math.min(N-1,Math.round(c.i0+(px-c.ML)/c.IW*(c.n-1))));
-      showAt(i, pt.clientX, pt.clientY);
+function renderAll(){
+  derive();
+  section('meta', drawMeta); section('mood', drawMood); section('sees', drawSees); section('key', drawKey);
+  section('chart', render); section('how', drawFold);
+}
+if (!D) { $('nodata').hidden=false; $('grid').hidden=true; }
+else {
+  renderAll();
+  let lastW=0;
+  new ResizeObserver(es => { const w=Math.round(es[0].contentRect.width); if (w!==lastW){ lastW=w; clearTimeout(window.__rt); window.__rt=setTimeout(()=>section('chart',render),120); } }).observe(ch);
+  setInterval(()=>section('meta',drawMeta), 6e4);
+  // live refresh on the published site only: poll the small summary, refetch data when its version changes
+  if (/\.github\.io$/.test(location.hostname)) {
+    const poll = async () => {
+      if (document.visibilityState!=='visible') return;
+      try {
+        const j = await (await fetch('data/summary.json',{cache:'no-store'})).json();
+        if (j.data_version && j.data_version!==S.data_version) { const d=await (await fetch('data/data.json',{cache:'no-store'})).json(); if (d?.summary){ D=d; renderAll(); } }
+      } catch(e) {}
     };
-    ov.onmouseleave=hide;
+    const next = () => setTimeout(()=>poll().finally(next), (ny(new Date()).open?5:60)*6e4);
+    next(); document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') poll(); });
   }
 }
-function showAt(i,cx,cy){
-  for(const id of Object.keys(charts)){ const c=charts[id], xx=c.x(i), l=document.getElementById('xh-'+id); l.setAttribute('x1',xx); l.setAttribute('x2',xx); l.style.opacity=1; }
-  const dot=document.getElementById('dot-c-price'); if(dot){ dot.setAttribute('cx',charts['c-price'].x(i)); dot.setAttribute('cy',charts['c-price'].y(D.close[i])); dot.style.opacity=1; }
-  const k=D.regime[i];
-  tip.innerHTML=`<b>${fmt.date(D.dates[i])}</b>${i>=D.oosStart?' <span style="color:var(--ink-2)">· live</span>':''}
-    <div class="row" style="margin-top:4px"><span>${sw(k)} <b>${REG[k]}</b></span><span>${fmt.pct(D.probs[k][i])}</span></div>
-    ${REG.map((r,j)=>j===k?'':`<div class="row" style="color:var(--ink-2)"><span>${r}</span><span>${fmt.pct(D.probs[j][i])}</span></div>`).join('')}
-    <div class="row" style="margin-top:4px;border-top:1px solid var(--grid);padding-top:4px"><span>S&amp;P 500</span><span>${fmt.n0(D.close[i])}</span></div>
-    <div class="row"><span>VIX</span><span>${fmt.n2(D.vix[i])}</span></div>`;
-  const panel=tip.parentElement.getBoundingClientRect();
-  let tx=cx-panel.left, ty=cy-panel.top; const tw=tip.offsetWidth||210;
-  if(tx+tw+24>panel.width) tx=tx-tw-24;
-  tx=Math.max(-12,Math.min(tx,panel.width-tw-12));
-  tip.style.left=tx+'px'; tip.style.top=ty+'px'; tip.style.opacity=1;
-}
-function hide(){ tip.style.opacity=0; for(const id of Object.keys(charts)) document.getElementById('xh-'+id).style.opacity=0; const d=document.getElementById('dot-c-price'); if(d) d.style.opacity=0; }
-
-/* ---------- tables ---------- */
-const st=D.stats;
-document.getElementById('stats-sub').textContent = 'S&P 500, '+D.dates[0].slice(0,4)+'-'+D.dates[last].slice(0,4)+', grouped by the mood the model gave each day';
-document.getElementById('stats').innerHTML = `<tr><th>Mood</th><th>Share of days</th><th>Avg yearly return</th><th>Swings (volatility)</th><th>Return per unit of risk</th><th>Avg VIX</th><th>Avg spell (trading days)</th></tr>`
-  + REG.map((r,k)=>`<tr><td>${sw(k)}${r}</td><td>${fmt.pct(st.share[k])}</td><td class="${st.ann_return_next_day[k]>=0?'':'dn'}">${fmt.sgn(st.ann_return_next_day[k])}</td><td>${fmt.pct(st.ann_vol_next_day[k])}</td><td>${fmt.n2(st.sharpe_next_day[k])}</td><td>${fmt.n1(st.mean_vix[k])}</td><td>${Math.round(st.expected_duration_days[k])}</td></tr>`).join('');
-const short = r => r.replace('Sideways','Side.').replace('Volatile','Vol');
-document.getElementById('trans').innerHTML = `<tr><th>from \\ to</th>${REG.map(r=>`<th>${short(r)}</th>`).join('')}</tr>`
-  + D.transition.map((row,i)=>`<tr><td>${REG[i]}</td>${row.map((v,j)=>{ const a=Math.min(1,0.06+Math.pow(v,.5)*0.95); return `<td class="${a>.6?'h':''}" style="background:color-mix(in srgb, var(--accent) ${Math.round(a*100)}%, transparent)">${i===j?v.toFixed(3):v<.0005?'<span style="color:var(--muted)">·</span>':v.toFixed(3)}</td>`; }).join('')}</tr>`).join('');
-const FEAT={ret_1d:'1-day return',ret_1w:'1-week return',ret_1m:'1-month return',ret_1y:'1-year return',trend_mom:'vs 200-day avg',log_vix:'VIX',log_rv21:'Actual swings'};
-// values that round to zero print as a plain 0.0% (no sign, no colour)
-const centre = v => Math.abs(v) < 0.0005 ? '<td>0.0%</td>' : `<td class="${v<0?'dn':''}">${fmt.sgn(v)}</td>`;
-document.getElementById('means').innerHTML = `<tr><th>Mood</th>${D.features.map(f=>`<th>${FEAT[f]||f}</th>`).join('')}</tr>`
-  + REG.map((r,k)=>`<tr><td>${r}</td>${D.features.map(f=>{ const v=D.means[f][k]; if(f==='log_vix') return `<td>${Math.exp(v).toFixed(1)}</td>`; if(f==='log_rv21') return `<td>${fmt.pct(Math.exp(v))}</td>`; return centre(v); }).join('')}</tr>`).join('');
-document.getElementById('diag').innerHTML = `Today's diagnostics: entropy <span class="mono">${fmt.n3(D.entropy[last])}</span> (0 = certain, 1 = no idea) · smoothed and Viterbi paths agree with today's mood: ${S.regime_smoothed===REG[cur]&&S.regime_viterbi===REG[cur]?'yes':'no'}`;
-// right-edge fade when a table is wider than its box (phones)
-function tableCues(){
-  document.querySelectorAll('.twrap').forEach(w=>{ const t=w.firstElementChild; w.classList.toggle('more', t.scrollWidth - t.clientWidth - t.scrollLeft > 4); });
-}
-document.querySelectorAll('.tw').forEach(t=>t.addEventListener('scroll',tableCues,{passive:true}));
-document.querySelectorAll('details').forEach(d=>d.addEventListener('toggle',tableCues));
-
-/* ---------- source viewer ---------- */
-const SRC = D.sources || {}, SRCNAMES = Object.keys(SRC);
-let srcSel = SRCNAMES[0];
-const srcTabs=document.getElementById('srctabs'), srcCode=document.getElementById('srccode'), copyBtn=document.getElementById('copybtn');
-function drawSrc(){
-  srcTabs.innerHTML = SRCNAMES.map(n=>`<button type="button" role="tab" id="src-${n.replace(/\W/g,'_')}" aria-pressed="${n===srcSel}">${n}</button>`).join('');
-  srcCode.textContent = SRC[srcSel] || '';
-  document.getElementById('srcpre').scrollTop = 0;
-}
-srcTabs.addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; srcSel=b.textContent; drawSrc(); });
-copyBtn.addEventListener('click',()=>{
-  const text=SRC[srcSel]||'';
-  const done=()=>{ copyBtn.textContent='Copied '+srcSel; setTimeout(()=>copyBtn.textContent='Copy file',1800); };
-  const fallback=()=>{ const r=document.createRange(); r.selectNodeContents(srcCode); const s=getSelection(); s.removeAllRanges(); s.addRange(r); copyBtn.textContent='Selected, press Ctrl+C'; setTimeout(()=>copyBtn.textContent='Copy file',2500); };
-  try{ navigator.clipboard.writeText(text).then(done,fallback); }catch(e){ fallback(); }
-});
-if(SRCNAMES.length) drawSrc();
-
-/* ---------- boot ---------- */
-render(); tableCues();
-let rt; window.addEventListener('resize',()=>{ clearTimeout(rt); rt=setTimeout(()=>{ render(); tableCues(); },120); });
-// the SVG charts bake colours read from CSS, so redraw them when the theme changes
-const mq=window.matchMedia('(prefers-color-scheme: dark)'); mq.addEventListener && mq.addEventListener('change',()=>{ render(); });
-new MutationObserver(()=>render()).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 </script>
+</body>
+</html>

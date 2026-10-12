@@ -1,0 +1,25 @@
+{
+ "written_utc": "2026-10-12T15:09:57Z",
+ "c_star": "C3",
+ "verdict": "FAIL",
+ "H7": "deferred to deployment",
+ "checks": {
+  "H1": true,
+  "H2": true,
+  "H3": false,
+  "H4": true,
+  "H5": true,
+  "H6": true,
+  "H7": null
+ },
+ "ships": "live model stays as is (saved 1990-2022 calibration); only the model-independent display fixes ship; C3 runs as a shadow model and needs the full H1-H7 bar on 12 prospective months",
+ "holdout": {
+  "start": "2019-01-02",
+  "end": "2026-10-09",
+  "n_origins": 1953,
+  "first_origin": "2019-01-02",
+  "last_origin": "2026-10-08"
+ },
+ "decision_sha256": "592387b4b51844f894332d83bb7bca15361020d31c707af616a5f4d8da595ac2",
+ "prereg_sha256": "8ae42ec6a4acf149e36f175fc49ea1d91b19cb60cd9c60209e72b678931d41f2"
+}

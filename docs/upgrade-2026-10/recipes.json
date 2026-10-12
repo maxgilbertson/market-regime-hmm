@@ -1,0 +1,83 @@
+{
+ "version": 1,
+ "source": "PREREG.md sections 2-10 (sha256 8ae42ec6a4acf149e36f175fc49ea1d91b19cb60cd9c60209e72b678931d41f2)",
+ "prereg_sha256": "8ae42ec6a4acf149e36f175fc49ea1d91b19cb60cd9c60209e72b678931d41f2",
+ "regimes": ["Bull Quiet", "Bull Volatile", "Sideways Quiet", "Sideways Volatile", "Bear Quiet", "Bear Volatile"],
+ "common": {
+  "fit": "hmm_regime.fit_hmm (verbatim copy wf1/baseline/hmm_regime_copy.py)",
+  "hmm": {"n_states": 6, "covariance_type": "full", "n_iter": 1000, "tol": 1e-05, "min_covar": 0.0001,
+          "transmat_prior": 1.001, "startprob_prior": 1.001, "init_params": "", "params": "stmc",
+          "A0_diag": 0.95, "A0_off": 0.01, "jitter": 0.15},
+  "seeds": 8,
+  "mean_weight": 3000.0,
+  "anchor_rule": "sign",
+  "smooth_tau": 1.0
+ },
+ "recipes": {
+  "B0": {"label": "Baseline", "history": "legacy", "bridge": false,
+         "features": ["ret_1d", "ret_1w", "ret_1m", "ret_1y", "trend_mom", "log_vix", "log_rv21"],
+         "scale_from": null, "clip": null, "tau": 1.0},
+  "C1": {"label": "Steady", "history": "spx_calendar", "bridge": false,
+         "features": ["ret_1d", "ret_1w", "ret_1m", "ret_1y", "trend_mom", "log_vix", "log_rv21"],
+         "scale_from": null, "clip": 5.0, "tau": 0.5},
+  "C2": {"label": "Longer memory", "history": "spx_calendar", "bridge": true,
+         "features": ["ret_1d", "ret_1w", "ret_1m", "ret_1y", "trend_mom", "log_vix", "log_rv21"],
+         "scale_from": "1990-01-02", "clip": 5.0, "tau": 0.5},
+  "C3": {"label": "VIX-scaled", "history": "spx_calendar", "bridge": false,
+         "features": ["z_1d", "ret_1w", "ret_1m", "ret_1y", "trend_mom", "log_vix", "log_rv21"],
+         "scale_from": null, "clip": 5.0, "tau": 0.5},
+  "C4": {"label": "VIX-scaled + longer memory", "history": "spx_calendar", "bridge": true,
+         "features": ["z_1d", "ret_1w", "ret_1m", "ret_1y", "trend_mom", "log_vix", "log_rv21"],
+         "scale_from": "1990-01-03", "clip": 5.0, "tau": 0.5},
+  "C5": {"label": "VIX-scaled + longer memory + credit", "history": "spx_calendar", "bridge": true,
+         "features": ["z_1d", "ret_1w", "ret_1m", "ret_1y", "trend_mom", "log_vix", "log_rv21", "baa_chg21"],
+         "scale_from": "1990-01-03", "clip": 5.0, "tau": 0.5, "baa_stale_days": 10}
+ },
+ "data": {
+  "spx": "data/yahoo/_GSPC.csv", "vix": "data/yahoo/_VIX.csv", "baa": "data/fred/BAA10Y.csv",
+  "bridge": "wf1/data-auditor/out/vix_spliced_1986.csv", "bridge_col": "vix_spliced", "bridge_until": "1989-12-31",
+  "spx_start": "1985-01-02", "legacy_start": "1990-01-01", "baa_rule": "BAA10Y"
+ },
+ "dev": {
+  "cut": "2018-12-31", "fit_years": [2001, 2018], "score_start": "2001-01-02",
+  "windows": {"2001-2018": ["2001-01-01", "2018-12-31"], "2001-2010": ["2001-01-01", "2010-12-31"],
+              "2011-2018": ["2011-01-01", "2018-12-31"]},
+  "primary_window": "2001-2018"
+ },
+ "holdout": {"start": "2019-01-02", "fit_years": [2019, 2026], "deploy_year": 2026, "sub_window": ["2023-01-01", null],
+             "wf_history_from": 2001},
+ "metrics": {
+  "bootstrap": {"block": 63, "n": 5000, "seed": 20261012},
+  "fwd_horizon": 21, "dip_threshold": -0.05, "dip_prior_weight": 63.0,
+  "heads_pooled_below_weight": 250.0,
+  "calibration_bins": [0, 0.5, 0.7, 0.9, 0.99, 1.0001],
+  "label_min_days": 60,
+  "truth_vol_median_end": "2018-12-31",
+  "correction": {"thr": 0.10, "reset": 0.10},
+  "isotonic": {"increasing": true, "out_of_bounds": "clip", "y_min": 0.0, "y_max": 1.0},
+  "ece_refit_above": 0.05, "ece_refit_years": [2001, 2025]
+ },
+ "guards": {
+  "G1": {"gate_pass_all": true, "max_fwdvol_failures": 0, "min_agree_b0": 0.80, "max_share_dev_pp": 5.0},
+  "G2": {"qlike_ratio_max": 1.05, "spearman_drop_max": 0.01, "dip_brier_boot_pct": 90},
+  "G3": {"truth_brier_boot_pct": 90},
+  "G4": {"le_b0": ["switches_per_year", "flipflops_per_year", "share_spells_lt_5d"]},
+  "G5": {"anybear_lag_extra_max": 3, "anybear_missed_le_b0": true},
+  "G6": {"dls1_mean_gt": 0.0}
+ },
+ "parents": {
+  "C5": [["C4", 0.003, true]],
+  "C4": [["C3", 0.002, false], ["C2", 0.005, false]],
+  "C2": [["C1", 0.002, false]],
+  "C3": [["C1", 0.005, false]]
+ },
+ "pass_bar": {
+  "H1": {"dls1_mean_gt": 0.0, "lb95_gt": 0.0},
+  "H2": {"qlike_ratio_max": 1.05, "spearman_drop_max": 0.02, "dip_brier_boot_pct": 90},
+  "H3": {"gate_pass_all": true, "max_fwdvol_failures": 0, "dip_failures_le_b0": true, "min_agree_b0": 0.75},
+  "H4": {"truth_brier_boot_pct": 90},
+  "H5": {"switches_extra_max": 1.0, "flipflops_extra_max": 0.5},
+  "H6": {"anybear_lag_extra_max": 5, "anybear_missed_le_b0": true},
+  "H7": "deferred to deployment"
+ }
+}
