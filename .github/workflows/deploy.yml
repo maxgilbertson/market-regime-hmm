@@ -36,8 +36,17 @@ jobs:
           path: out/prices.csv
           key: prices-${{ github.run_id }}
           restore-keys: prices-
-      # Re-filters with the saved calibration in model/hmm_params.json (no refit)
+      # Re-filters with the saved calibration in model/hmm_params.json (refit yearly by refit.yml)
       - run: python hmm_regime.py
+      # Display-only market signals (credit stress, VIX curve, small caps); never blocks the update
+      - name: Reuse market-signal downloads
+        uses: actions/cache@v4
+        with:
+          path: out/context_cache
+          key: context-${{ github.run_id }}
+          restore-keys: context-
+      - run: python context_data.py
+        continue-on-error: true
       - run: python build_dashboard.py --site site
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -1,38 +1,47 @@
 """
-Six-regime Hidden Markov Model for the US equity market.
+Six-regime hidden Markov model for the S&P 500, model v2 (October 2026).
 
-Observations (daily):
-    ret_1d, ret_1w, ret_1m, ret_1y   log returns over 1 / 5 / 21 / 252 trading days
-    trend_mom                        log(close / SMA200)  (trend momentum)
-    log_vix                          log of VIX close
-    log_rv21                         log of 21-day realised vol (annualised)
+Regimes: Bull / Sideways / Bear  x  Quiet / Volatile.
 
-Model:
-    Gaussian HMM, 6 hidden states, full covariance.
-    Parameters calibrated with Baum-Welch EM (forward-backward) on the
-    training window; observations standardised with training statistics.
+Recipe (C3 "VIX-scaled", chosen in the October 2026 pre-registered test, docs/upgrade-2026-10/):
+    z_1d       today's S&P 500 log return divided by the daily move implied by YESTERDAY's VIX
+    ret_1w     5-day log return
+    ret_1m     21-day log return
+    ret_1y     252-day log return
+    trend_mom  log(close / 200-day average)
+    log_vix    log VIX
+    log_rv21   log of 21-day realised volatility (annualised)
+S&P features are built on the full S&P calendar (history from 1985) and VIX is joined without
+forward-filling, so rows start 1990-01-03. Inputs are standardised with the training rows' mean
+and sd, then clipped at +-5 sd.
+
+Model: 6-state Gaussian HMM, full covariance, Baum-Welch EM started at rule-based anchors
+(direction from the signs of trend_mom and ret_1m, Quiet/Volatile from the training VIX median)
+with a MAP prior holding each state mean near its anchor, 8 restarts.
 
 Inference:
-    filtered  P(s_t | y_1..t)         forward pass   (causal, what you trade on)
-    smoothed  P(s_t | y_1..T)         forward-backward (hindsight, for labelling)
-    predicted P(s_{t+1} | y_1..t)     filtered @ A
-    entropy   H(filtered_t) / log(6)  0 = certain, 1 = uniform
-    viterbi   most likely joint path
+    filtered   P(s_t | data to t), with the emission log-likelihood tempered by tau = 0.5
+               (steadier, better-calibrated probabilities); this is what the page shows
+    predicted  P(s_t+1 | data to t) = filtered @ A
+    smoothed   P(s_t | all data), untempered; hindsight only
+    pred_sd    the model's forecast of the size of tomorrow's move (mixture over regimes)
+    p_dip21    chance of a 5% fall within 21 trading days, from per-regime "heads" fitted on
+               training rows (each regime's shrunk historical dip rate)
 
-State -> regime mapping:
-    Each hidden state gets a volatility score (log_vix + log_rv21 state means)
-    and a direction score (ret_1m + trend_mom state means).  The three lowest
-    volatility states are "Quiet", the three highest "Volatile"; within each
-    group the direction rank gives Bear / Sideways / Bull.
-
-Usage:
-    python hmm_regime.py [--train-end 2022-12-31] [--start 1990-01-01]
-                         [--ticker ^GSPC] [--seeds 8] [--outdir out]
+Modes:
+    python hmm_regime.py                         live run with model/hmm_params.json
+    python hmm_regime.py --refit --train-end 2026-12-31
+                                                 yearly recalibration; writes the new params only
+                                                 if every label check passes (exit code 2 if not)
+    python hmm_regime.py --append-wf 2026        append that year's as-called moods (from the
+                                                 current out/regime_history.csv) to model/wf_history.csv
 """
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import json
+import logging
 import sys
 import warnings
 from enum import Enum
@@ -44,8 +53,9 @@ from scipy.special import logsumexp
 from scipy.stats import multivariate_normal
 
 warnings.filterwarnings("ignore")
-import logging  # noqa: E402
 logging.getLogger("hmmlearn").setLevel(logging.ERROR)  # MAP-EM makes the likelihood monitor chatty
+
+SQ252 = float(np.sqrt(252))
 
 
 class Regime(str, Enum):
@@ -57,119 +67,96 @@ class Regime(str, Enum):
     BEAR_VOLATILE = "Bear Volatile"
 
 
-REGIME_ORDER = [
-    Regime.BULL_QUIET, Regime.BULL_VOLATILE,
-    Regime.SIDEWAYS_QUIET, Regime.SIDEWAYS_VOLATILE,
-    Regime.BEAR_QUIET, Regime.BEAR_VOLATILE,
-]
+REGIME_ORDER = list(Regime)
+REGS = [r.value for r in REGIME_ORDER]
 
-# hue = direction (green / blue / red), lightness = volatility (light = quiet)
-REGIME_COLOR = {
-    Regime.BULL_QUIET: "#5fbf5f",
-    Regime.BULL_VOLATILE: "#006300",
-    Regime.SIDEWAYS_QUIET: "#86b6ef",
-    Regime.SIDEWAYS_VOLATILE: "#1c5cab",
-    Regime.BEAR_QUIET: "#ec835a",
-    Regime.BEAR_VOLATILE: "#b0201f",
+RECIPE = {   # the evaluated C3 recipe; a params file may carry its own copy
+    "id": "C3", "label": "VIX-scaled",
+    "features": ["z_1d", "ret_1w", "ret_1m", "ret_1y", "trend_mom", "log_vix", "log_rv21"],
+    "clip": 5.0, "tau": 0.5, "seeds": 8, "mean_weight": 3000.0,
+    "dip_horizon": 21, "dip_threshold": -0.05, "dip_prior_weight": 63.0,
 }
-REGIME_HATCH = {r: ("//" if "Volatile" in r.value else None) for r in REGIME_ORDER}
-
-FEATURES = ["ret_1d", "ret_1w", "ret_1m", "ret_1y", "trend_mom", "log_vix", "log_rv21"]
-ANCHOR_RULE = "sign"  # "sign" (200d MA + 1m return signs) or "tercile" (momentum composite terciles)
+SPX_START, VIX_START = "1985-01-01", "1990-01-01"
 
 
 # --------------------------------------------------------------------------- data
-def load_data(ticker: str, start: str, cache: Path, offline: bool = False) -> pd.DataFrame:
-    """
-    Always downloads fresh prices (during US market hours the last row is
-    today's live, partial bar). Falls back to the local cache only if the
-    download fails, or when offline=True.
-    """
-    if offline:
-        if not cache.exists():
-            raise RuntimeError(f"--offline given but no cache at {cache}")
-        return pd.read_csv(cache, index_col=0, parse_dates=True)
-
+def _download(sym: str, start: str) -> pd.Series:
     import time
     import yfinance as yf
 
-    try:
-        series = {}
-        for name, sym in (("close", ticker), ("vix", "^VIX")):
-            for attempt in range(4):
-                try:
-                    s = yf.Ticker(sym).history(start=start, auto_adjust=True)["Close"]
-                except Exception:  # noqa: BLE001
-                    s = pd.Series(dtype=float)
-                if len(s) > 1000:
-                    break
-                time.sleep(2 + attempt * 2)
-            else:
-                raise RuntimeError(f"could not download {sym}")
+    for attempt in range(4):
+        try:
+            s = yf.Ticker(sym).history(start=start, auto_adjust=True)["Close"]
+        except Exception:  # noqa: BLE001
+            s = pd.Series(dtype=float)
+        if len(s) > 1000:
             s.index = pd.to_datetime(s.index).tz_localize(None).normalize()
-            series[name] = s[~s.index.duplicated(keep="last")]
-        px = pd.concat(series, axis=1).dropna()
-        px.to_csv(cache)
-        return px
-    except Exception as e:  # noqa: BLE001
-        if cache.exists():
+            return s[~s.index.duplicated(keep="last")].dropna()
+        time.sleep(2 + attempt * 3)
+    raise RuntimeError(f"could not download {sym}")
+
+
+def load_data(cache: Path, offline: bool = False) -> pd.DataFrame:
+    """S&P 500 calendar (master) from 1985 with the VIX joined on it (never forward-filled).
+    Downloads fresh prices each run (the last row is today's live bar while US markets are open)
+    and falls back to the cache if the download fails."""
+    if not offline:
+        try:
+            spx, vix = _download("^GSPC", SPX_START), _download("^VIX", VIX_START)
+            raw = pd.DataFrame({"close": spx, "vix": vix.reindex(spx.index)}, index=spx.index)
+            if raw["close"].iloc[-1] <= 0 or raw.index[-1] < pd.Timestamp.today().normalize() - pd.Timedelta(days=10):
+                raise RuntimeError("downloaded prices look stale or invalid")
+            raw.to_csv(cache)
+            return raw
+        except Exception as e:  # noqa: BLE001
             print(f"  download failed ({e}); using cached prices", file=sys.stderr)
-            return pd.read_csv(cache, index_col=0, parse_dates=True)
-        raise
+    if not cache.exists():
+        raise RuntimeError(f"no cached prices at {cache}")
+    raw = pd.read_csv(cache, index_col=0, parse_dates=True)
+    if "close" not in raw:   # old cache format (inner-joined from 1990) cannot rebuild the 1990 rows
+        raise RuntimeError(f"{cache} is in the old format; delete it and run online once")
+    return raw
 
 
-def build_features(px: pd.DataFrame) -> pd.DataFrame:
-    df = px.copy()
+def build_features(raw: pd.DataFrame, features: list[str]) -> pd.DataFrame:
+    """Recipe features (identical to the evaluation code). 'sig' = VIX/100/sqrt(252)."""
+    df = raw[["close"]].copy()
     lc = np.log(df["close"])
     df["ret_1d"] = lc.diff(1)
     df["ret_1w"] = lc.diff(5)
     df["ret_1m"] = lc.diff(21)
     df["ret_1y"] = lc.diff(252)
     df["trend_mom"] = lc - np.log(df["close"].rolling(200).mean())
+    df["log_rv21"] = np.log(df["ret_1d"].rolling(21).std() * SQ252 + 1e-8)
+    df["vix"] = raw["vix"]
     df["log_vix"] = np.log(df["vix"])
-    df["log_rv21"] = np.log(df["ret_1d"].rolling(21).std() * np.sqrt(252) + 1e-8)
-    return df.dropna()
+    df["z_1d"] = df["ret_1d"] / (df["vix"].shift(1) / 100 / SQ252)   # previous S&P day's VIX
+    df = df.dropna(subset=list(features) + ["vix"])
+    df["sig"] = df["vix"] / 100 / SQ252
+    return df
 
 
-# --------------------------------------------------------------------------- HMM
-def anchor_labels(train: pd.DataFrame) -> np.ndarray:
-    """
-    Rule-based pre-labelling of the training window into the 6-regime grid.
-    direction : terciles of a composite momentum index (1m return + trend + 1y return)
-    volatility: log VIX above / below its training median
-    State index k corresponds to REGIME_ORDER[k] by construction.
-    """
-    def z(s):
-        return (s - s.mean()) / s.std()
+def zmat(df: pd.DataFrame, feats, mu, sd, clip) -> np.ndarray:
+    Z = ((df[list(feats)] - mu) / sd).values
+    return np.clip(Z, -clip, clip) if clip else Z
 
-    if ANCHOR_RULE == "sign":
-        # Bear: price below 200d MA and negative 1m return; Bull: above MA and positive 1m;
-        # Sideways: mixed signals (pullback in uptrend / bounce in downtrend)
-        bear = (train["trend_mom"] < 0) & (train["ret_1m"] < 0)
-        bull = (train["trend_mom"] > 0) & (train["ret_1m"] > 0)
-        d = np.where(bull, "Bull", np.where(bear, "Bear", "Sideways"))
-    else:
-        direction = z(train["ret_1m"]) + z(train["trend_mom"]) + z(train["ret_1y"])
-        lo, hi = direction.quantile([1 / 3, 2 / 3])
-        d = np.where(direction > hi, "Bull", np.where(direction < lo, "Bear", "Sideways"))
-    v = np.where(train["log_vix"] > train["log_vix"].median(), "Volatile", "Quiet")
-    names = [f"{a} {b}" for a, b in zip(d, v)]
-    lookup = {r.value: i for i, r in enumerate(REGIME_ORDER)}
-    return np.array([lookup[n] for n in names])
+
+# --------------------------------------------------------------------------- fitting
+def anchor_labels(train: pd.DataFrame, vix_med: float) -> np.ndarray:
+    """Sign anchors: k = 2*direction + volatile (Bull/Sideways/Bear x Quiet/Volatile)."""
+    bull = (train["trend_mom"] > 0) & (train["ret_1m"] > 0)
+    bear = (train["trend_mom"] < 0) & (train["ret_1m"] < 0)
+    d = np.where(bull, 0, np.where(bear, 2, 1))
+    return 2 * d + (train["log_vix"] > vix_med).values.astype(int)
 
 
 def fit_hmm(X: np.ndarray, anchors: np.ndarray, seeds: int, mean_weight: float = 0.0):
-    """
-    Baum-Welch EM with the six states initialised at the regime anchors
-    (mean / covariance of each rule-labelled bucket, sticky transitions).
-    seed 0 is the pure anchored start; other seeds jitter the means slightly.
-    mean_weight > 0 adds a Gaussian prior on each state mean centred on its
-    anchor with that many pseudo-observations (MAP-EM): the quant-rule
-    definitions hold unless the data strongly disagrees.
-    """
+    """Baum-Welch EM started at the anchor buckets, sticky transitions; seed 0 is the pure anchored
+    start, other seeds jitter the means. mean_weight > 0 adds a Gaussian prior on each state mean
+    centred on its anchor (MAP-EM)."""
     from hmmlearn.hmm import GaussianHMM
 
-    K, d = len(REGIME_ORDER), X.shape[1]
+    K, d = 6, X.shape[1]
     mu0 = np.stack([X[anchors == k].mean(axis=0) for k in range(K)])
     cov0 = np.stack([np.cov(X[anchors == k].T) + 1e-3 * np.eye(d) for k in range(K)])
     A0 = np.full((K, K), 0.01)
@@ -183,8 +170,7 @@ def fit_hmm(X: np.ndarray, anchors: np.ndarray, seeds: int, mean_weight: float =
         m = GaussianHMM(
             n_components=K, covariance_type="full", n_iter=1000, tol=1e-5,
             random_state=seed, min_covar=1e-4, init_params="", params="stmc",
-            transmat_prior=1.0 + 1e-3, startprob_prior=1.0 + 1e-3,  # tiny pseudo-counts: no NaN rows
-            **prior,
+            transmat_prior=1.0 + 1e-3, startprob_prior=1.0 + 1e-3, **prior,
         )
         m.startprob_ = np.full(K, 1 / K)
         m.transmat_ = A0.copy()
@@ -196,8 +182,7 @@ def fit_hmm(X: np.ndarray, anchors: np.ndarray, seeds: int, mean_weight: float =
             print(f"  seed {seed}: fit failed ({e})", file=sys.stderr)
             continue
         ll = m.score(X)
-        conv = m.monitor_.converged
-        print(f"  seed {seed}: loglik {ll:,.1f}  iters {m.monitor_.iter}  converged {conv}")
+        print(f"  seed {seed}: loglik {ll:,.1f}  iters {m.monitor_.iter}  converged {m.monitor_.converged}")
         if ll > best_ll:
             best, best_ll = m, ll
     if best is None:
@@ -205,70 +190,55 @@ def fit_hmm(X: np.ndarray, anchors: np.ndarray, seeds: int, mean_weight: float =
     return best, best_ll
 
 
-def save_model(path: Path, config: dict, model, mu, sd, fitted_at: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({
-        "config": config,
-        "fitted_at_utc": fitted_at,
-        "feature_mean": list(map(float, mu)),
-        "feature_std": list(map(float, sd)),
-        "startprob": model.startprob_.tolist(),
-        "transmat": model.transmat_.tolist(),
-        "means": model.means_.tolist(),
-        "covars": model.covars_.tolist(),
-    }, indent=1))
+def label_gate(means, mu, sd, feats) -> dict:
+    """Checks that the fitted states still mean what their names say."""
+    raw = np.asarray(means) * np.asarray(sd) + np.asarray(mu)
+    f = {name: raw[:, i] for i, name in enumerate(feats)}
+
+    def z(v):
+        return (v - v.mean()) / (v.std() + 1e-12)
+
+    vol, dirn = z(f["log_vix"]) + z(f["log_rv21"]), z(f["ret_1m"]) + z(f["trend_mom"]) + z(f["ret_1w"])
+    by_vol = np.argsort(vol)
+    mapping = {}
+    for group, ks in ((by_vol[:3], [4, 2, 0]), (by_vol[3:], [5, 3, 1])):
+        for s, k in zip(group[np.argsort(dirn[group])], ks):
+            mapping[int(s)] = k
+    i_tm, i_1m, i_v = feats.index("trend_mom"), feats.index("ret_1m"), feats.index("log_vix")
+    g = {"rank_ok": all(mapping[k] == k for k in range(6)),
+         "bull_sign_ok": all(raw[k, i_tm] > 0 and raw[k, i_1m] > 0 for k in (0, 1)),
+         "bear_sign_ok": all(raw[k, i_tm] < 0 and raw[k, i_1m] < 0 for k in (4, 5)),
+         "vol_twin_ok": all(raw[k, i_v] > raw[k - 1, i_v] for k in (1, 3, 5)),
+         "bear_volatile_highest_vix": bool(raw[5, i_v] == raw[:, i_v].max())}
+    g = {k: bool(v) for k, v in g.items()}
+    g["pass"] = all(g.values())
+    return g
 
 
-def load_model(path: Path, config: dict):
-    """Return (model, mu, sd, fitted_at) if a saved calibration matches config, else None."""
-    from hmmlearn.hmm import GaussianHMM
-
-    if not path.exists():
-        return None
-    blob = json.loads(path.read_text())
-    if blob.get("config") != config:
-        print(f"  saved calibration in {path} was fit with different settings; refitting")
-        return None
-    K = len(blob["startprob"])
-    m = GaussianHMM(n_components=K, covariance_type="full", init_params="")
-    m.n_features = len(blob["means"][0])
-    m.startprob_ = np.array(blob["startprob"])
-    m.transmat_ = np.array(blob["transmat"])
-    m.means_ = np.array(blob["means"])
-    m.covars_ = np.array(blob["covars"])
-    return m, np.array(blob["feature_mean"]), np.array(blob["feature_std"]), blob["fitted_at_utc"]
-
-
-def emission_logprob(model, X: np.ndarray) -> np.ndarray:
-    """log N(y_t | mu_k, Sigma_k) for every t, k."""
-    K = model.n_components
-    out = np.empty((len(X), K))
-    for k in range(K):
-        out[:, k] = multivariate_normal.logpdf(X, model.means_[k], model.covars_[k], allow_singular=True)
+# --------------------------------------------------------------------------- inference
+def emission_logprob(means, covars, X: np.ndarray) -> np.ndarray:
+    out = np.empty((len(X), len(means)))
+    for k in range(len(means)):
+        out[:, k] = multivariate_normal.logpdf(X, means[k], covars[k], allow_singular=True)
     return out
 
 
-def forward_backward(log_pi: np.ndarray, log_A: np.ndarray, logB: np.ndarray):
-    """
-    Returns filtered, smoothed, predicted (one step ahead), log-likelihood.
-    All in log space; no scaling issues.
-    """
-    T, K = logB.shape
-    log_alpha = np.empty((T, K))
-    log_alpha[0] = log_pi + logB[0]
-    for t in range(1, T):
-        log_alpha[t] = logsumexp(log_alpha[t - 1][:, None] + log_A, axis=0) + logB[t]
-    loglik = logsumexp(log_alpha[-1])
+def forward_tempered(logB, pi, A, tau=1.0):
+    """Filtered P(s_t | data to t) and predicted P(s_t+1 | data to t), emission log-lik scaled by tau."""
+    from hmmlearn import _hmmc
 
-    log_beta = np.zeros((T, K))
-    for t in range(T - 2, -1, -1):
-        log_beta[t] = logsumexp(log_A + (logB[t + 1] + log_beta[t + 1])[None, :], axis=1)
+    _, fwd = _hmmc.forward_log(pi, A, tau * logB)
+    filt = np.exp(fwd - logsumexp(fwd, axis=1, keepdims=True))
+    return filt, filt @ A
 
-    filtered = np.exp(log_alpha - logsumexp(log_alpha, axis=1, keepdims=True))
-    log_post = log_alpha + log_beta
-    smoothed = np.exp(log_post - logsumexp(log_post, axis=1, keepdims=True))
-    predicted = filtered @ np.exp(log_A)
-    return filtered, smoothed, predicted, loglik
+
+def smooth(logB, pi, A):
+    from hmmlearn import _hmmc
+
+    _, fwd = _hmmc.forward_log(pi, A, logB)
+    bwd = _hmmc.backward_log(pi, A, logB)
+    lg = fwd + bwd
+    return np.exp(lg - logsumexp(lg, axis=1, keepdims=True))
 
 
 def viterbi(log_pi, log_A, logB) -> np.ndarray:
@@ -292,301 +262,231 @@ def entropy(p: np.ndarray) -> np.ndarray:
     return -(p * np.log(p)).sum(axis=1) / np.log(p.shape[1])
 
 
-# --------------------------------------------------------------------------- labelling
-def label_states(model, mu: np.ndarray, sd: np.ndarray) -> dict[int, Regime]:
-    """
-    Consistency check on the anchored states after EM.
-    Re-derives the regime grid from the fitted state means (volatility rank
-    splits Quiet / Volatile, direction rank inside each half gives
-    Bear / Sideways / Bull) and warns if EM drifted away from the anchors.
-    The anchored identity mapping is always used; this is diagnostic.
-    """
-    means = model.means_ * sd + mu  # back to raw feature units
-    f = {name: means[:, i] for i, name in enumerate(FEATURES)}
-
-    def z(v):
-        return (v - v.mean()) / (v.std() + 1e-12)
-
-    vol_score = z(f["log_vix"]) + z(f["log_rv21"])
-    dir_score = z(f["ret_1m"]) + z(f["trend_mom"]) + z(f["ret_1w"])
-
-    K = len(vol_score)
-    by_vol = np.argsort(vol_score)
-    quiet, volatile = by_vol[: K // 2], by_vol[K // 2:]
-    mapping: dict[int, Regime] = {}
-    for group, names in (
-        (quiet, [Regime.BEAR_QUIET, Regime.SIDEWAYS_QUIET, Regime.BULL_QUIET]),
-        (volatile, [Regime.BEAR_VOLATILE, Regime.SIDEWAYS_VOLATILE, Regime.BULL_VOLATILE]),
-    ):
-        for s, name in zip(group[np.argsort(dir_score[group])], names):
-            mapping[int(s)] = name
-    return mapping
+def return_moments(P: dict, df: pd.DataFrame, feats) -> tuple[np.ndarray, np.ndarray]:
+    """Per-day, per-regime mean and variance of the next day's raw log return."""
+    i = feats.index("z_1d") if "z_1d" in feats else feats.index("ret_1d")
+    m0 = P["means"][:, i] * P["feature_std"][i] + P["feature_mean"][i]
+    v0 = P["covars"][:, i, i] * P["feature_std"][i] ** 2
+    if feats[i] == "z_1d":                      # scaled by today's VIX-implied daily move
+        s = df["sig"].values[:, None]
+        return s * m0, s ** 2 * v0
+    return np.tile(m0, (len(df), 1)), np.tile(v0, (len(df), 1))
 
 
-# --------------------------------------------------------------------------- plotting
-def make_chart(df: pd.DataFrame, probs: pd.DataFrame, regime_cols, outfile: Path,
-               years: int = 12, train_end=None):
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    import matplotlib.ticker
-    from matplotlib.patches import Patch
-
-    d = df[df.index >= df.index[-1] - pd.DateOffset(years=years)]
-    p = probs.loc[d.index]
-
-    fig, axes = plt.subplots(
-        4, 1, figsize=(15, 13), sharex=True,
-        gridspec_kw={"height_ratios": [3, 2, 1.2, 1.2], "hspace": 0.08},
-    )
-    fig.patch.set_facecolor("#fcfcfb")
-    ink, muted, grid = "#0b0b0b", "#898781", "#e1e0d9"
-
-    # panel 1: price with filtered-regime shading
-    ax = axes[0]
-    ax.plot(d.index, d["close"], color=ink, lw=1.2)
-    ax.set_yscale("log")
-    reg = d["regime_filtered"].values
-    start = 0
-    for i in range(1, len(d) + 1):
-        if i == len(d) or reg[i] != reg[start]:
-            r = Regime(reg[start])
-            ax.axvspan(d.index[start], d.index[min(i, len(d) - 1)], color=REGIME_COLOR[r],
-                       alpha=0.28, lw=0, hatch=REGIME_HATCH[r])
-            start = i
-    ax.set_ylabel("S&P 500 (log)", color=ink)
-    ax.yaxis.set_major_formatter(matplotlib.ticker.StrMethodFormatter("{x:,.0f}"))
-    ax.yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
-    ax.set_title("HMM market regimes (filtered, argmax) - shading = regime, hatch = volatile",
-                 loc="left", color=ink, fontsize=12)
-    if train_end is not None and d.index[0] < train_end < d.index[-1]:
-        for a in axes:
-            a.axvline(train_end, color=muted, lw=1, ls="--")
-        ax.annotate("out-of-sample ->", (train_end, d["close"].min()), xytext=(4, 4),
-                    textcoords="offset points", color=muted, fontsize=8)
-    handles = [Patch(facecolor=REGIME_COLOR[r], alpha=0.5, hatch=REGIME_HATCH[r], label=r.value)
-               for r in REGIME_ORDER]
-    ax.legend(handles=handles, ncol=6, loc="upper left", fontsize=8, frameon=False)
-
-    # panel 2: stacked filtered probabilities
-    ax = axes[1]
-    ax.stackplot(p.index, [p[c].values for c in regime_cols],
-                 colors=[REGIME_COLOR[Regime(c)] for c in regime_cols], lw=0)
-    ax.set_ylim(0, 1)
-    ax.set_ylabel("Filtered P(regime)", color=ink)
-
-    # panel 3: entropy
-    ax = axes[2]
-    ax.plot(d.index, d["entropy_filtered"], color="#2a78d6", lw=1)
-    ax.fill_between(d.index, 0, d["entropy_filtered"], color="#2a78d6", alpha=0.15, lw=0)
-    ax.set_ylim(0, 1)
-    ax.set_ylabel("Regime entropy", color=ink)
-
-    # panel 4: VIX
-    ax = axes[3]
-    ax.plot(d.index, d["vix"], color="#eb6834", lw=1)
-    ax.set_ylabel("VIX", color=ink)
-
-    for ax in axes:
-        ax.set_facecolor("#fcfcfb")
-        ax.grid(True, color=grid, lw=0.6)
-        for s in ("top", "right"):
-            ax.spines[s].set_visible(False)
-        for s in ("left", "bottom"):
-            ax.spines[s].set_color("#c3c2b7")
-        ax.tick_params(colors=muted, labelsize=9)
-    fig.savefig(outfile, dpi=130, bbox_inches="tight")
-    plt.close(fig)
+def dip_heads(F: np.ndarray, df: pd.DataFrame, close: pd.Series, train_end, R: dict) -> np.ndarray:
+    """Each regime's chance of a >=5% fall within 21 trading days, from training rows whose 21-day
+    window ends by train_end, weighted by the filtered probabilities and shrunk to the overall rate."""
+    H, w = R["dip_horizon"], R["dip_prior_weight"]
+    fmin = close[::-1].rolling(H).min()[::-1].shift(-1)
+    dip = ((fmin / close - 1) <= R["dip_threshold"]).astype(float).where(fmin.notna())
+    d21 = pd.Series(close.index, index=close.index).shift(-H)
+    ok = ((d21 <= pd.Timestamp(train_end)).reindex(df.index).fillna(False).values
+          & np.isfinite(dip.reindex(df.index).values))
+    Dv = dip.reindex(df.index).values
+    qbar = Dv[ok].mean()
+    return (F[ok].T @ Dv[ok] + w * qbar) / (F[ok].sum(axis=0) + w)
 
 
-# --------------------------------------------------------------------------- main
+def load_params(path: Path) -> dict:
+    blob = json.loads(path.read_text())
+    R = {**RECIPE, **{k: v for k, v in (blob.get("recipe") or {}).items() if k in RECIPE}}
+    R["features"] = blob["config"]["features"]
+    P = {k: np.asarray(blob[k], float) for k in
+         ("startprob", "transmat", "means", "covars", "feature_mean", "feature_std")}
+    return {"blob": blob, "R": R, "P": P}
+
+
+def infer(M: dict, df: pd.DataFrame):
+    R, P = M["R"], M["P"]
+    X = zmat(df, R["features"], P["feature_mean"], P["feature_std"], R["clip"])
+    logB = emission_logprob(P["means"], P["covars"], X)
+    F, Pn = forward_tempered(logB, P["startprob"], P["transmat"], R["tau"])
+    S = smooth(logB, P["startprob"], P["transmat"])
+    V = viterbi(np.log(P["startprob"] + 1e-300), np.log(P["transmat"] + 1e-300), logB)
+    return F, Pn, S, V
+
+
+# --------------------------------------------------------------------------- modes
+def refit(args, raw: pd.DataFrame) -> int:
+    """Yearly recalibration on all rows up to --train-end. Writes params only if every check passes."""
+    R = dict(RECIPE)
+    feats = R["features"]
+    df = build_features(raw, feats)
+    te = pd.Timestamp(args.train_end)
+    train = df.loc[:te]
+    mu, sd = train[feats].mean().values, train[feats].std().values
+    X = zmat(train, feats, mu, sd, R["clip"])
+    vmed = float(train["log_vix"].median())
+    anc = anchor_labels(train, vmed)
+    print(f"Refitting {R['id']} on {train.index[0].date()} -> {train.index[-1].date()} ({len(train):,} rows)")
+    model, ll = fit_hmm(X, anc, R["seeds"], mean_weight=R["mean_weight"])
+    gate = label_gate(model.means_, mu, sd, feats)
+    blob = {
+        "config": {"ticker": "^GSPC", "start": str(df.index[0].date()), "train_end": str(te.date()),
+                   "seeds": R["seeds"], "anchor": "sign", "mean_weight": R["mean_weight"], "features": feats,
+                   "refit": "yearly"},
+        "fitted_at_utc": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S+00:00"),
+        "feature_mean": mu.tolist(), "feature_std": sd.tolist(),
+        "startprob": model.startprob_.tolist(), "transmat": model.transmat_.tolist(),
+        "means": model.means_.tolist(), "covars": model.covars_.tolist(),
+        "recipe": {k: R[k] for k in ("id", "label", "clip", "tau")},
+        "meta": {"fit_year": te.year + 1, "train_last_row": str(train.index[-1].date()), "n_train": int(len(train)),
+                 "train_loglik_per_obs": float(ll / len(X)), "vix_median_log": vmed, "gate": gate},
+    }
+    M = {"blob": blob, "R": {**R}, "P": {k: np.asarray(blob[k], float) for k in
+                                         ("startprob", "transmat", "means", "covars", "feature_mean", "feature_std")}}
+    F, _, _, _ = infer(M, df.loc[:te])
+    blob["dip_heads"] = dip_heads(F, df.loc[:te], raw["close"], te, R).tolist()
+
+    # stability check: the new fit's calls over the last 5 years should mostly agree with the old fit's
+    agree = None
+    path = Path(args.model_file)
+    if path.exists():
+        old = load_params(path)
+        recent = df.loc[te - pd.DateOffset(years=5):te]
+        Fo, _, _, _ = infer(old, df.loc[:te])
+        Fn, _, _, _ = infer(M, df.loc[:te])
+        k = df.loc[:te].index.isin(recent.index)
+        agree = float((Fo[k].argmax(1) == Fn[k].argmax(1)).mean())
+    share = pd.Series(F.argmax(1)).iloc[-2520:].value_counts(normalize=True).reindex(range(6), fill_value=0)
+    checks = {**gate, "every_mood_seen_1pct_last_10y": bool((share >= 0.01).all()),
+              "agrees_with_previous_fit_85pct_last_5y": agree is None or agree >= 0.85}
+    checks["pass"] = all(v for k, v in checks.items() if k != "pass")
+    print("  checks:", checks, f"(agreement {agree:.3f})" if agree is not None else "")
+    status = {"train_end": str(te.date()), "checked_utc": blob["fitted_at_utc"], "checks": checks, "agreement": agree}
+    (path.parent / "refit_status.json").write_text(json.dumps(status, indent=1))
+    if not checks["pass"]:
+        print("REFIT REJECTED: keeping the previous calibration", file=sys.stderr)
+        return 2
+    path.write_text(json.dumps(blob, indent=1))
+    print(f"  saved {path}")
+    return 0
+
+
+def append_wf(year: int, out: Path) -> int:
+    """Append a finished year's as-called moods (from the live run's history) to model/wf_history.csv."""
+    h = pd.read_csv(out / "regime_history.csv", index_col=0, parse_dates=True)
+    rows = h[h.index.year == year]
+    if rows.empty:
+        print(f"no rows for {year}", file=sys.stderr)
+        return 1
+    wf_path = Path("model/wf_history.csv")
+    wf = pd.read_csv(wf_path, index_col=0, parse_dates=True) if wf_path.exists() else pd.DataFrame()
+    add = pd.DataFrame({"model_year": year, "regime": rows["regime_filtered"], "p_max": rows["p_max_filtered"].round(6)})
+    for r in REGS:
+        add[f"p_{r}"] = rows[f"pf_{r}"].round(6)
+    add.index.name = "Date"
+    wf = pd.concat([wf[wf.index.year != year], add]).sort_index() if len(wf) else add
+    wf.to_csv(wf_path, float_format="%.6f", date_format="%Y-%m-%d")
+    print(f"appended {len(add)} rows for {year} to {wf_path}")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--ticker", default="^GSPC")
-    ap.add_argument("--start", default="1990-01-01")
-    ap.add_argument("--train-end", default="2022-12-31",
-                    help="EM calibration uses data up to this date; later dates are out-of-sample")
-    ap.add_argument("--seeds", type=int, default=8)
-    ap.add_argument("--anchor", choices=["sign", "tercile"], default="sign",
-                    help="rule used to define the six regime anchors on the training window")
-    ap.add_argument("--mean-weight", type=float, default=3000.0,
-                    help="pseudo-observations pulling each state mean toward its anchor (0 = free EM). "
-                         "Free EM fits ~0.2 nats/obs better but lets 'Bear Quiet' drift into a "
-                         "positive-return dip state; 3000 keeps all six regimes on their definitions.")
     ap.add_argument("--outdir", default="out")
-    ap.add_argument("--model-file", default="model/hmm_params.json",
-                    help="saved calibration; reused when its settings match, so live runs only re-filter")
-    ap.add_argument("--refit", action="store_true", help="ignore the saved calibration and refit")
+    ap.add_argument("--model-file", default="model/hmm_params.json")
     ap.add_argument("--offline", action="store_true", help="use cached prices instead of downloading")
+    ap.add_argument("--refit", action="store_true", help="yearly recalibration (needs --train-end)")
+    ap.add_argument("--train-end", default=None)
+    ap.add_argument("--append-wf", type=int, default=None, metavar="YEAR")
     args = ap.parse_args()
-    global ANCHOR_RULE
-    ANCHOR_RULE = args.anchor
 
-    outdir = Path(args.outdir)
-    outdir.mkdir(exist_ok=True)
+    out = Path(args.outdir)
+    out.mkdir(exist_ok=True)
+    if args.append_wf:
+        return append_wf(args.append_wf, out)
+
     updated_at = pd.Timestamp.now(tz="UTC")
-
     print("Loading data ...")
-    px = load_data(args.ticker, args.start, outdir / "prices.csv", offline=args.offline)
-    df = build_features(px)
-    print(f"  {len(df):,} observations {df.index[0].date()} -> {df.index[-1].date()}")
+    raw = load_data(out / "prices.csv", offline=args.offline)
+    if args.refit:
+        if not args.train_end:
+            ap.error("--refit needs --train-end")
+        return refit(args, raw)
 
-    config = {
-        "ticker": args.ticker, "start": args.start, "train_end": args.train_end,
-        "seeds": args.seeds, "anchor": args.anchor, "mean_weight": args.mean_weight,
-        "features": FEATURES,
-    }
-    saved = load_model(Path(args.model_file), config) if not args.refit else None
+    M = load_params(Path(args.model_file))
+    R, P, blob = M["R"], M["P"], M["blob"]
+    feats = R["features"]
+    df = build_features(raw, feats)
+    print(f"  {len(df):,} rows {df.index[0].date()} -> {df.index[-1].date()}; "
+          f"calibration trained to {blob['config']['train_end']} ({R.get('id', '?')}, tau {R['tau']})")
 
-    train = df.loc[: args.train_end]
-    if saved is not None:
-        model, mu, sd, fitted_at = saved
-        print(f"Using saved calibration from {args.model_file} (fitted {fitted_at})")
-    else:
-        mu, sd = train[FEATURES].mean().values, train[FEATURES].std().values
-    X_all = ((df[FEATURES] - mu) / sd).values
-    X_tr = ((train[FEATURES] - mu) / sd).values
-    print(f"  training window {train.index[0].date()} -> {train.index[-1].date()} ({len(train):,} obs)")
+    F, Pn, S, V = infer(M, df)
+    Mk, Vk = return_moments(P, df, feats)
+    pm = (Pn * Mk).sum(1)
+    pred_sd = np.sqrt((Pn * (Vk + Mk ** 2)).sum(1) - pm ** 2)
+    q = np.asarray(blob.get("dip_heads") or dip_heads(F, df, raw["close"], blob["config"]["train_end"], R))
+    p_dip = F @ q
 
-    if saved is None:
-        anchors = anchor_labels(train)
-        print("  anchor bucket sizes:",
-              {r.value: int((anchors == i).sum()) for i, r in enumerate(REGIME_ORDER)})
-        print(f"Calibrating 6-state Gaussian HMM with Baum-Welch (forward-backward EM), "
-              f"{args.seeds} restarts ...")
-        model, ll_train = fit_hmm(X_tr, anchors, args.seeds, mean_weight=args.mean_weight)
-        fitted_at = str(updated_at.floor("s"))
-        save_model(Path(args.model_file), config, model, mu, sd, fitted_at)
-        print(f"  saved calibration to {args.model_file}")
-    else:
-        ll_train = model.score(X_tr)
+    train_end = pd.Timestamp(blob["config"]["train_end"])
+    outdf = df[["close", "vix", "ret_1d"] + [f for f in feats if f != "ret_1d"]].copy()
+    outdf["regime_filtered"] = [REGS[i] for i in F.argmax(1)]
+    outdf["regime_smoothed"] = [REGS[i] for i in S.argmax(1)]
+    outdf["regime_viterbi"] = [REGS[i] for i in V]
+    outdf["p_max_filtered"] = F.max(1)
+    outdf["entropy_filtered"] = entropy(F)
+    outdf["entropy_smoothed"] = entropy(S)
+    outdf["pred_sd"] = pred_sd
+    outdf["p_dip21"] = p_dip
+    outdf["out_of_sample"] = df.index > train_end
+    for k, r in enumerate(REGS):
+        outdf[f"pf_{r}"] = F[:, k]
+    for k, r in enumerate(REGS):
+        outdf[f"ps_{r}"] = S[:, k]
+    outdf.to_csv(out / "regime_history.csv", float_format="%.6f")
 
-    mapping = {k: REGIME_ORDER[k] for k in range(6)}          # anchored by construction
-    check = label_states(model, mu, sd)                         # rank-based re-derivation
-    drift = [f"{mapping[k].value} -> looks like {check[k].value}" for k in range(6) if check[k] != mapping[k]]
-    if drift:
-        print("  WARNING: EM drifted from anchors on:", "; ".join(drift))
-    else:
-        print("  post-EM state ordering consistent with anchors (vol split + direction rank)")
-
-    print("Running forward (filter) and forward-backward (smoother) over full history ...")
-    log_pi = np.log(model.startprob_ + 1e-300)
-    log_A = np.log(model.transmat_ + 1e-300)
-    logB = emission_logprob(model, X_all)
-    filt, smooth, pred, ll_all = forward_backward(log_pi, log_A, logB)
-    vit = viterbi(log_pi, log_A, logB)
-
-    # cross-check smoother against hmmlearn's own forward-backward
-    ref = model.predict_proba(X_all)
-    print(f"  smoother max |diff| vs hmmlearn: {np.abs(ref - smooth).max():.2e}")
-    oos = df.index > pd.Timestamp(args.train_end)
-    print(f"  loglik/obs  in-sample {ll_train/len(X_tr):.4f}   "
-          f"full {ll_all/len(X_all):.4f}")
-
-    # -------- assemble output table (columns ordered by regime)
-    order = sorted(range(6), key=lambda k: REGIME_ORDER.index(mapping[k]))
-    regime_cols = [mapping[k].value for k in order]
-    P_f = pd.DataFrame(filt[:, order], index=df.index, columns=regime_cols)
-    P_s = pd.DataFrame(smooth[:, order], index=df.index, columns=regime_cols)
-    P_p = pd.DataFrame(pred[:, order], index=df.index, columns=regime_cols)
-
-    out = df[["close", "vix"] + FEATURES].copy()
-    out["regime_filtered"] = P_f.idxmax(axis=1)
-    out["regime_smoothed"] = P_s.idxmax(axis=1)
-    out["regime_viterbi"] = [mapping[int(s)].value for s in vit]
-    out["regime_predicted_next"] = P_p.idxmax(axis=1)
-    out["p_max_filtered"] = P_f.max(axis=1)
-    out["entropy_filtered"] = entropy(P_f.values)
-    out["entropy_smoothed"] = entropy(P_s.values)
-    out["out_of_sample"] = oos
-    for c in regime_cols:
-        out[f"pf_{c}"] = P_f[c]
-    for c in regime_cols:
-        out[f"ps_{c}"] = P_s[c]
-    out.to_csv(outdir / "regime_history.csv", float_format="%.6f")
-
-    # -------- transition matrix in regime order, expected durations
-    A = model.transmat_[np.ix_(order, order)]
-    A_df = pd.DataFrame(A, index=regime_cols, columns=regime_cols)
-    A_df.to_csv(outdir / "transition_matrix.csv", float_format="%.4f")
-    durations = {c: float(1 / (1 - A[i, i])) for i, c in enumerate(regime_cols)}
-
-    # -------- per-regime realised statistics (filtered labelling, next-day return)
-    fwd = out["ret_1d"].shift(-1)
+    A = P["transmat"]
+    pd.DataFrame(A, index=REGS, columns=REGS).to_csv(out / "transition_matrix.csv", float_format="%.4f")
+    pd.DataFrame(P["means"] * P["feature_std"] + P["feature_mean"], index=REGS, columns=feats).to_csv(
+        out / "state_means.csv", float_format="%.5f")
+    durations = {r: float(1 / (1 - A[k, k])) for k, r in enumerate(REGS)}
+    fwd = outdf["ret_1d"].shift(-1)
     stats = []
-    for c in regime_cols:
-        m = out["regime_filtered"] == c
-        r = fwd[m].dropna()
-        stats.append({
-            "regime": c,
-            "days": int(m.sum()),
-            "share": float(m.mean()),
-            "ann_return_next_day": float(r.mean() * 252),
-            "ann_vol_next_day": float(r.std() * np.sqrt(252)),
-            "sharpe_next_day": float(r.mean() / r.std() * np.sqrt(252)) if r.std() > 0 else np.nan,
-            "mean_vix": float(out.loc[m, "vix"].mean()),
-            "expected_duration_days": durations[c],
-        })
-    stats_df = pd.DataFrame(stats).set_index("regime")
-    stats_df.to_csv(outdir / "regime_stats.csv", float_format="%.4f")
+    for r in REGS:
+        m = outdf["regime_filtered"] == r
+        x = fwd[m].dropna()
+        stats.append({"regime": r, "days": int(m.sum()), "share": float(m.mean()),
+                      "ann_return_next_day": float(x.mean() * 252), "ann_vol_next_day": float(x.std() * SQ252),
+                      "mean_vix": float(outdf.loc[m, "vix"].mean()), "expected_duration_days": durations[r]})
+    pd.DataFrame(stats).set_index("regime").to_csv(out / "regime_stats.csv", float_format="%.4f")
 
-    # -------- state means in raw units
-    means_raw = pd.DataFrame(model.means_[order] * sd + mu, index=regime_cols, columns=FEATURES)
-    means_raw.to_csv(outdir / "state_means.csv", float_format="%.5f")
-
-    # -------- current snapshot
-    last = out.index[-1]
-    recent = out.iloc[-10:]
+    last = outdf.index[-1]
     summary = {
         "as_of": str(last.date()),
         "updated_at_utc": updated_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "model_fitted_at_utc": fitted_at,
-        "ticker": args.ticker,
-        "train_end": args.train_end,
-        "n_obs": int(len(out)),
-        "close": float(out.loc[last, "close"]),
-        "vix": float(out.loc[last, "vix"]),
-        "regime_filtered": out.loc[last, "regime_filtered"],
-        "regime_smoothed": out.loc[last, "regime_smoothed"],
-        "regime_viterbi": out.loc[last, "regime_viterbi"],
-        "regime_predicted_tomorrow": out.loc[last, "regime_predicted_next"],
-        "filtered_probs": {c: round(float(P_f.loc[last, c]), 4) for c in regime_cols},
-        "predicted_probs_tomorrow": {c: round(float(P_p.loc[last, c]), 4) for c in regime_cols},
-        "entropy_filtered": round(float(out.loc[last, "entropy_filtered"]), 4),
-        "entropy_filtered_20d_mean": round(float(out["entropy_filtered"].iloc[-20:].mean()), 4),
-        "features_last": {f: round(float(out.loc[last, f]), 5) for f in FEATURES},
+        "model_fitted_at_utc": blob.get("fitted_at_utc"),
+        "model": {"recipe": R.get("id"), "label": R.get("label"), "tau": R["tau"], "clip": R["clip"],
+                  "features": feats, "train_start": blob["config"]["start"], "train_end": blob["config"]["train_end"]},
+        "train_end": blob["config"]["train_end"],
+        "ticker": "^GSPC",
+        "n_obs": int(len(outdf)),
+        "close": float(outdf.loc[last, "close"]),
+        "vix": float(outdf.loc[last, "vix"]),
+        "regime_filtered": outdf.loc[last, "regime_filtered"],
+        "regime_smoothed": outdf.loc[last, "regime_smoothed"],
+        "regime_viterbi": outdf.loc[last, "regime_viterbi"],
+        "filtered_probs": {r: round(float(F[-1, k]), 4) for k, r in enumerate(REGS)},
+        "entropy_filtered": round(float(outdf.loc[last, "entropy_filtered"]), 4),
+        "pred_sd": round(float(pred_sd[-1]), 6),
+        "p_dip21": round(float(p_dip[-1]), 4),
+        "dip_heads": {r: round(float(q[k]), 4) for k, r in enumerate(REGS)},
+        "features_last": {f: round(float(outdf.loc[last, f]), 5) for f in feats},
         "expected_duration_days": {k: round(v, 1) for k, v in durations.items()},
-        "loglik_per_obs_train": round(float(ll_train / len(X_tr)), 4),
-        "loglik_per_obs_full": round(float(ll_all / len(X_all)), 4),
     }
-    (outdir / "summary.json").write_text(json.dumps(summary, indent=2))
+    (out / "summary.json").write_text(json.dumps(summary, indent=1))
 
-    print("Rendering chart ...")
-    make_chart(out, P_f, regime_cols, outdir / "regime_chart.png",
-               train_end=pd.Timestamp(args.train_end))
+    if not np.all(np.isfinite(F)) or not (0.002 <= pred_sd[-1] <= 0.15):
+        print("SANITY CHECK FAILED: non-finite probabilities or implausible forecast", file=sys.stderr)
+        return 3
 
-    # -------- console report
-    pd.set_option("display.width", 200)
-    print("\n=== CURRENT REGIME  (as of", summary["as_of"], ") ===")
-    print(f"  close {summary['close']:,.2f}   VIX {summary['vix']:.2f}")
-    print(f"  filtered : {summary['regime_filtered']}   (p={out.loc[last,'p_max_filtered']:.3f}, "
-          f"entropy={summary['entropy_filtered']:.3f})")
-    print(f"  smoothed : {summary['regime_smoothed']}")
-    print(f"  viterbi  : {summary['regime_viterbi']}")
-    print(f"  tomorrow : {summary['regime_predicted_tomorrow']}")
-    print("\n  filtered probabilities:")
-    for c, v in summary["filtered_probs"].items():
-        print(f"    {c:<18} {v:6.1%}   {'#' * int(v * 40)}")
-    print("\n=== LAST 10 DAYS ===")
-    print(recent[["close", "vix", "regime_filtered", "p_max_filtered", "entropy_filtered"]].round(3).to_string())
-    print("\n=== TRANSITION MATRIX (rows = from) ===")
-    print(A_df.round(3).to_string())
-    print("\n=== REGIME STATS (filtered labels, next-day returns) ===")
-    print(stats_df.round(3).to_string())
-    print("\n=== STATE MEANS (raw units) ===")
-    print(means_raw.round(4).to_string())
-    print(f"\nOutputs written to {outdir.resolve()}")
+    print(f"\n=== {last.date()}  S&P {summary['close']:,.2f}  VIX {summary['vix']:.2f}")
+    print(f"  mood: {summary['regime_filtered']} (p={F[-1].max():.3f}, entropy {summary['entropy_filtered']:.3f})")
+    print(f"  forecast daily move +-{pred_sd[-1]*100:.2f}%   chance of a 5% fall within a month {p_dip[-1]:.1%}")
+    for r in REGS:
+        print(f"    {r:<18} {summary['filtered_probs'][r]:6.1%}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

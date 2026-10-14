@@ -1,6 +1,6 @@
 # Model upgrade test, October 2026
 
-**Verdict: FAIL. The live model stays as it is.** The best candidate is kept as a shadow model and re-tested on new data until October 2027.
+**Verdict under the pre-set rules: FAIL** (one label check). **Update, 14 October 2026:** Max asked for the most accurate model, so C3 was made the live model anyway. It is the more accurate model on every accuracy measure in the test. The failed check is stated on the page: read "Bear Quiet" and "Bear Volatile" both as "falling", not as a ranking of danger.
 
 The test plan in [PREREG.md](PREREG.md) was written and fingerprinted (SHA-256 `8ae42ec6…41f2`) before any candidate was scored on 2019–2026 data. [deviations.md](deviations.md) records every interpretation choice made while coding it.
 
@@ -47,17 +47,18 @@ H3 failed because "Bear Quiet" days were followed by a 5% drop within a month mo
 
 For context, on the same 2019–2026 days a standard GARCH(1,1) volatility model with fat tails scored 3.243. C3 beat it and B0 did not. A simple rulebook (the six moods from fixed thresholds, with no hidden Markov model) scored 3.257, slightly above both.
 
-## What shipped instead
+## What shipped on 12 October (old model kept)
 
-These are display fixes that do not change the model:
+- Confidence words calibrated from the model's walk-forward record, so "100%" no longer appears.
+- "What usually happens next" figures from walk-forward days only.
+- The "predicted tomorrow" mood removed (it was right no more often than guessing "same as today").
+- A plain note that Bear moods describe the recent past, not a forecast.
 
-- Confidence words are calibrated from the live model's walk-forward record (`model/confidence_map.json`), so "100%" no longer appears. Raw 90% calls, for example, held up only about 61% of the time.
-- The "What usually happens next" figures come from walk-forward days (`model/wf_history.csv`), where each year's moods came from a version trained only on earlier years.
-- The "predicted tomorrow" mood was removed, because it was right no more often than guessing "same as today".
-- The page says plainly that Bear moods describe the recent past, not a forecast.
+## What shipped on 14 October (C3 live)
 
-## Shadow test
-
-`model/shadow/hmm_params_C3_2026.json` (trained on data to 2025-12-31) is frozen. Its SHA-256 is in `model/shadow/manifest.json`. After 12 months of new data (from 2026-10-13 to 2027-10-12), C3 and the live model are scored on those days with the same code and the full H1–H7 bar. C3 replaces the live model only if it passes every check.
-
-The evaluation scripts are in [code/](code/). They were run against a local data cache and helper modules from the research workspace, so they record the method rather than run as-is.
+- `model/hmm_params.json` is the holdout's 2026 fit of C3 (trained on 1990-01-03 to 2025-12-31), exactly as evaluated. The live code reproduces the test's 2026 probabilities to within 5e-11. The previous model is kept in `model/legacy/`.
+- `model/confidence_map.json` is the isotonic map frozen on 2001-2018 before the test. On unseen 2019-2026 days its calibration error was 0.021, and "very sure" calls held up 97 times in 100.
+- `model/wf_history.csv` holds C3's as-called walk-forward moods for 2001-2026.
+- The model is refit every 2 January on all data to 31 December (`.github/workflows/refit.yml`), which is the cadence the test evaluated. A new fit is kept only if the mood labels still pass their checks and agree with the previous fit on at least 85% of the last five years' days. Otherwise the old fit stays and an issue is opened. Refitting on data to 2025-12-31 rebuilds the shipped calibration to within 1e-11.
+- New page figures come straight from the model: the forecast size of tomorrow's move, and the chance of a 5% fall within 21 trading days (each mood's shrunk historical rate, weighted by today's probabilities).
+- Credit stress, the VIX curve and small caps vs the S&P 500 are shown as context only. They are not model inputs, because they did not improve accuracy in the test.

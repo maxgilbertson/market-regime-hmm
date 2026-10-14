@@ -5,3 +5,5 @@ __pycache__/
 out/prices.csv
 # GitHub Pages build output, produced by the publish workflow
 site/
+# raw downloads behind out/context.json (context_data.py)
+out/context_cache/

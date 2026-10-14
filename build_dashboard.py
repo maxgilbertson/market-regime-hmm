@@ -6,7 +6,9 @@ Optional inputs, used when present:
                               "very_sure_hit": 0.93, "method": "isotonic, walk-forward"}
   model/wf_history.csv       Date + "regime" (walk-forward, out-of-sample label per day);
                              the per-mood statistics then use those days only.
---site DIR also writes DIR/index.html and DIR/data/{summary.json, regime_history.csv, data.json}.
+  model/track_record.json    facts from the 2019-2026 unseen-data test (shown as "Track record").
+  out/context.json           display-only "other signals" (not used by the model); skipped when missing.
+--site DIR also writes DIR/index.html and DIR/data/{summary.json, regime_history.csv, data.json, context.json}.
 """
 import csv
 import hashlib
@@ -27,7 +29,7 @@ DIR_FAM, VOL_FAM = ["Bull", "Bull", "Sideways", "Sideways", "Bear", "Bear"], ["Q
 # plain wording per model input: label, note, phrase, noun (plural?), transform, unit, signed, dp, (low, high) side words
 FEAT = {
     "ret_1d": ("Last day", "S&P 500, latest day", "the last day's move", "the last day's move", "pct", "%", True, 1, ("weak", "strong")),
-    "z_1d": ("Last day vs VIX", "in VIX-sized units", "the last day's move", "the last day's move", "id", "×", True, 1, ("weak", "strong")),
+    "z_1d": ("Last day vs VIX", "in VIX-sized units", "the last day's move sized against the VIX", "the last day's move", "id", "×", True, 1, ("weak", "strong")),
     "ret_1w": ("Past week", "last 5 trading days", "the past week's move", "the past week's move", "pct", "%", True, 1, ("weak", "strong")),
     "ret_1m": ("Past month", "last 21 trading days", "the past month's move", "the past month's move", "pct", "%", True, 1, ("weak", "strong")),
     "ret_1y": ("Past year", "last 252 trading days", "the past year's move", "the past year's move", "pct", "%", True, 0, ("weak", "strong")),
@@ -171,6 +173,19 @@ def axis_for(f):
 AXIS = {f: axis_for(f) for f in features}
 
 
+def level(pct, lo="lower", hi="higher"):
+    """Plain verdict for where a value sits in its own history (pct = share of days below it)."""
+    return (f"Much {lo} than usual" if pct < 0.1 else f"{lo.capitalize()} than usual" if pct < 0.3 else
+            f"A bit {lo} than usual" if pct < 0.45 else "About usual" if pct <= 0.55 else
+            f"A bit {hi} than usual" if pct <= 0.7 else f"{hi.capitalize()} than usual" if pct <= 0.9 else
+            f"Much {hi} than usual")
+
+
+def weekly(s):
+    """Past year, one point a week, always ending on the latest day."""
+    return s.loc[s.index[-1] - pd.DateOffset(years=1):].iloc[::-5][::-1]
+
+
 readings, NOUN = [], {}
 for f in features:
     lab_, note, phrase, noun, tx, unit, signed, dp, sides = FEAT.get(f, (f, "", f, f, "id", "", False, 2, ("low", "high")))
@@ -195,10 +210,7 @@ for f in features:
         elif pos <= 0.05 and pct < 0.5:
             vd = "Near its 1-year low"
         else:
-            vd = ("Much lower than usual" if pct < 0.1 else "Lower than usual" if pct < 0.3 else
-                  "A bit lower than usual" if pct < 0.45 else "About usual" if pct <= 0.55 else
-                  "A bit higher than usual" if pct <= 0.7 else "Higher than usual" if pct <= 0.9 else
-                  "Much higher than usual")
+            vd = level(pct)
         unusual = not (0.3 <= pct <= 0.7)
     spark = yr.iloc[::-5][::-1]  # weekly, always ending on today
     q = dp + 1
@@ -259,6 +271,82 @@ if "regime_smoothed" in h:
     if len(lags) >= 10:
         lag = [int(round(x)) for x in np.percentile(lags, [25, 75])]
 
+# ---------- risk ahead: the model's own forecasts (pred_sd, p_dip21), each vs its full history ----------
+def rnd(xs, q):
+    return [round(float(x), q) if np.isfinite(x) else None for x in xs]
+
+
+risk = []
+if "pred_sd" in h:
+    s = (h["pred_sd"].astype(float) * 100).replace([np.inf, -np.inf], np.nan).dropna()
+    act = (h["ret_1d"].astype(float).rolling(21).std() * 100) if "ret_1d" in h else None
+    if len(s) > 300 and np.isfinite(s.iloc[-1]):
+        v, sp = float(s.iloc[-1]), weekly(s)
+        pct = float((s.values < v).mean())
+        risk.append({
+            "key": "move", "label": "Expected daily move", "note": "for a typical day",
+            "value": round(v, 2), "p30": round(float(s.quantile(0.3)), 2), "p70": round(float(s.quantile(0.7)), 2),
+            "pct": round(pct, 3), "verdict": level(pct, "calmer", "bumpier"), "unusual": pct > 0.7,
+            "since": f"{s.index[0]:%Y}", "spark": rnd(sp.values, 3),
+            "spark2": rnd(act.reindex(sp.index).values, 3) if act is not None else None,
+            "actual": round(float(act.iloc[-1]), 2) if act is not None and np.isfinite(act.iloc[-1]) else None,
+        })
+if "p_dip21" in h:
+    s = h["p_dip21"].astype(float).replace([np.inf, -np.inf], np.nan).dropna()
+    if len(s) > 300 and np.isfinite(s.iloc[-1]):
+        v, sp = float(s.iloc[-1]), weekly(s)
+        pct = float((s.values < v).mean())
+        risk.append({
+            "key": "dip", "label": "Chance of a 5% fall", "note": "within a month",
+            "value": round(v, 4), "p30": round(float(s.quantile(0.3)) * 100, 2), "p70": round(float(s.quantile(0.7)) * 100, 2),
+            "pct": round(pct, 3), "verdict": level(pct), "unusual": pct > 0.7, "since": f"{s.index[0]:%Y}",
+            "spark": rnd(sp.values * 100, 2), "base": round(float((fmin[ok] <= -0.05).mean()), 4),
+        })
+
+# ---------- recent mood spells (live model, filtered) ----------
+spells, fr, i = [], h["regime_filtered"].values, n - 1
+while i >= 0 and len(spells) < 8:
+    a = i
+    while a > 0 and fr[a - 1] == fr[i]:
+        a -= 1
+    c0 = close.iloc[a - 1] if a > 0 else close.iloc[a]
+    spells.append({"k": REGS.index(fr[i]), "a": f"{h.index[a]:%Y-%m-%d}", "b": f"{h.index[i]:%Y-%m-%d}",
+                   "n": int(i - a + 1), "chg": round(float(close.iloc[i] / c0 - 1), 4)})
+    i = a - 1
+
+# ---------- track record (2019-2026 unseen-data test) ----------
+track = None
+TR = jload(MODEL / "track_record.json")
+if TR and TR.get("facts"):
+    track = {"facts": [{k: f.get(k) for k in ("value", "label", "detail")} for f in TR["facts"] if f.get("value")][:5],
+             "caveat": TR.get("caveat"), "record": TR.get("record"), "period": TR.get("period")}
+
+# ---------- other signals: display only, not used by the model ----------
+signals = []
+try:
+    CX = jload(OUT / "context.json") or {}
+    for g in CX.get("signals") or []:
+        sp = [x for x in (g.get("spark") or []) if x is not None and np.isfinite(x)]
+        v, pct = g.get("value"), g.get("pct")
+        if v is None or pct is None or not np.isfinite(v) or len(sp) < 2:
+            continue
+        dp, toward = int(g.get("dp", 2)), (pct > 0.5) == (g.get("stress") == "high")
+        vd = level(pct)
+        if not 0.3 <= pct <= 0.7:
+            vd += ": a stress sign" if toward else ": calm"
+        signals.append({
+            "key": g.get("key"), "label": g.get("label"), "note": str(g.get("note") or "").split(";")[0],
+            "more": str(g.get("note") or "").partition(";")[2].strip(), "source": g.get("source"),
+            "unit": {"pp": "pp", "pct_pts": "pp", "ratio": ""}.get(g.get("unit"), g.get("unit") or ""),
+            "signed": bool((g.get("p2") or 0) < 0), "dp": dp, "value": round(float(v), dp + 1),
+            "p30": g.get("p30"), "p70": g.get("p70"), "pct": round(float(pct), 3), "verdict": vd,
+            "unusual": toward and not 0.3 <= pct <= 0.7, "as_of": g.get("as_of"), "since": g.get("since"),
+            "spark": [round(float(x), dp + 1) for x in sp],
+        })
+except (ValueError, TypeError, AttributeError) as e:
+    print(f"context.json skipped: {e}")
+    signals = []
+
 # ---------- compact, tiered series: daily for 5 years, weekly before ----------
 cut = asof - pd.DateOffset(years=5)
 old = h.loc[h.index < cut]
@@ -281,6 +369,7 @@ while i < n:
 
 # 'train' describes the model that draws today's mood and the ribbon; the outlook figures may come from elsewhere
 train = {"start": f"{d0:%Y-%m-%d}", "end": train_end, "refit": cfg.get("refit", "fixed")}
+model_info = {k: (S.get("model") or {}).get(k) for k in ("label", "tau")} if S.get("model") else None
 summary = {
     "as_of": S["as_of"], "updated_at_utc": S.get("updated_at_utc"), "session": S.get("session"),
     "close": round(float(S.get("close", close.iloc[-1])), 2),
@@ -288,7 +377,7 @@ summary = {
     "vix": round(float(S.get("vix", h["vix"].iloc[-1])), 2),
     "regime": REGS[cur], "probs": {r: round(float(p), 4) for r, p in zip(REGS, probs)},
     "spell_start": f"{h.index[j]:%Y-%m-%d}", "spell_days": int(n - j),
-    "why": why, "why_against": why_against, "lag_days": lag, "train": train,
+    "why": why, "why_against": why_against, "lag_days": lag, "train": train, "model": model_info,
     "stats_source": "walk-forward" if wf is not None else "live",
     "inputs": list(dict.fromkeys(R[f]["phrase"] for f in features if f in R)),
     "calibration": ({"since": CMAP.get("since"), "hit": CMAP.get("very_sure_hit"), "method": CMAP.get("method")}
@@ -305,6 +394,7 @@ data = {
     "spans": spans, "unsure": unsure,
     "outlook": outlook, "outlook_all": outlook_all, "outlook_oos": outlook_oos, "period": period,
     "readings": readings, "headline": headline,
+    "risk": risk, "spells": spells, "track": track, "signals": signals,
 }
 
 blob = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
@@ -331,7 +421,7 @@ if "--site" in sys.argv:
         keep = [i for i, c in enumerate(hdr) if c != "regime_predicted_next"]
         wr.writerow([hdr[i] for i in keep])
         wr.writerows([row[i] for i in keep] for row in rd)
-    for name in ("transition_matrix.csv", "regime_stats.csv", "state_means.csv", "regime_chart.png"):
+    for name in ("transition_matrix.csv", "regime_stats.csv", "state_means.csv", "regime_chart.png", "context.json"):
         if (OUT / name).exists():   # keep the older data links working
             shutil.copy2(OUT / name, site / "data" / name)
     (site / ".nojekyll").write_text("")

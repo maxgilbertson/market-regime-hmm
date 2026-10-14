@@ -44,9 +44,10 @@ a{color:var(--accent);text-underline-offset:2px}
 .meta b{font-weight:400;color:var(--ink-2)}
 
 /* page grid */
-.grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);grid-template-areas:"mood sees" "chart chart" "how how" "foot foot";gap:28px 64px}
-.grid.nosees{grid-template-areas:"mood mood" "chart chart" "how how" "foot foot"}
+.grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);grid-template-areas:"mood sees" "chart chart" "recent other" "track track" "how how" "foot foot";gap:28px 64px}
+.grid.nosees{grid-template-areas:"mood mood" "chart chart" "recent other" "track track" "how how" "foot foot"}
 .mood{grid-area:mood;min-width:0}.sees{grid-area:sees;min-width:0}.panel{grid-area:chart;min-width:0}.fold{grid-area:how}footer{grid-area:foot}
+.recent{grid-area:recent;min-width:0}.other{grid-area:other;min-width:0}.track{grid-area:track;min-width:0}
 
 /* mood block */
 .kicker{color:var(--ink-2)}
@@ -64,7 +65,8 @@ a{color:var(--accent);text-underline-offset:2px}
 .facts small{font-size:12px;color:var(--muted);margin-left:6px;white-space:nowrap}
 
 /* what the model sees: one real mini chart per reading */
-.sees .hd{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:6px}
+.hd{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:0 12px;margin-bottom:6px}
+.sub{margin:-2px 0 8px}
 .rds{list-style:none;margin:0;padding:0}
 .rd{display:grid;grid-template-columns:minmax(0,1fr) 128px 80px;grid-template-areas:"t s n" "v s n";gap:0 16px;align-items:center;padding:8px 0 9px;border-top:1px solid var(--grid)}
 .rd:last-child{border-bottom:1px solid var(--grid)}
@@ -79,8 +81,27 @@ a{color:var(--accent);text-underline-offset:2px}
 .sz{fill:var(--zone);opacity:.45}
 .sl{fill:none;stroke:var(--ink);stroke-width:1.1;stroke-linejoin:round;stroke-linecap:round}
 .sd{fill:var(--ink);stroke:var(--bg);stroke-width:1.5}
+.sl2{fill:none;stroke:var(--muted);stroke-width:1.1;stroke-dasharray:2 2}
 .lg{font-size:12px;color:var(--muted);margin-top:10px}
 .lg i{display:inline-block;width:24px;height:8px;background:var(--zone);opacity:.45;margin-right:6px;vertical-align:0}
+.lg i.l2{height:0;background:none;border-top:1.5px dashed var(--muted);opacity:1;vertical-align:3px}
+.other .rd .t{flex-direction:column;gap:0}.other .rd .nt{white-space:normal}
+
+/* recent moods, track record */
+.spl{list-style:none;margin:0;padding:0}
+.spl li{display:grid;grid-template-columns:minmax(0,1fr) 64px 64px;gap:12px;align-items:baseline;padding:7px 0;border-top:1px solid var(--grid)}
+.spl li:last-child{border-bottom:1px solid var(--grid)}
+.spl .nm{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 12px;min-width:0}
+.spl .mn{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.spl .dt{color:var(--ink-2);white-space:nowrap}
+.spl .ds{color:var(--muted);text-align:right;white-space:nowrap}
+.spl b{font-weight:600;text-align:right;white-space:nowrap}
+.spl li.cur .mn{font-weight:600}
+.trk{list-style:none;margin:0;padding:12px 0 0;border-top:1px solid var(--grid);display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px 24px}
+.trk li{min-width:0}
+.trk b{display:block;font-size:20px;font-weight:600;line-height:1.25}
+.trk span{display:block;color:var(--ink-2);font-size:12px;margin-top:2px}
+.cav{font-size:12px;color:var(--muted);margin-top:14px;max-width:760px}
 
 /* chart panel */
 .panel{position:relative;background:var(--surface);border:1px solid var(--hair);border-radius:8px;padding:16px 16px 12px}
@@ -142,7 +163,7 @@ footer{font-size:12px;color:var(--muted);display:flex;flex-wrap:wrap;justify-con
 footer a{display:inline-block;padding:12px 0}
 
 @media (max-width:859px){
-  .grid,.grid.nosees{grid-template-columns:minmax(0,1fr);grid-template-areas:"mood" "chart" "sees" "how" "foot"}
+  .grid,.grid.nosees{grid-template-columns:minmax(0,1fr);grid-template-areas:"mood" "chart" "sees" "recent" "other" "track" "how" "foot"}
   .top{align-items:flex-start;flex-direction:column}.meta{text-align:left}
 }
 @media (max-width:520px){
@@ -152,6 +173,8 @@ footer a{display:inline-block;padding:12px 0}
   .facts small{display:block;margin:0;white-space:normal}.next h3 span{display:block;margin:0}
   .rd{grid-template-columns:minmax(0,1fr) 112px 64px;gap:0 12px}
   .rd .t{flex-direction:column;gap:0}.rd .nt{white-space:normal}.rd .n{font-size:17px}
+  .spl li{grid-template-columns:minmax(0,1fr) 56px 56px;gap:8px}
+  .trk{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 16px}
   .panel{padding:12px}
   .panel .seg,.fold .seg{display:flex;width:100%}.seg button{flex:1;height:40px}
   .ph{display:none}
@@ -193,6 +216,23 @@ footer a{display:inline-block;padding:12px 0}
       <div class="tip" id="tip" role="status"></div>
     </section>
 
+    <section class="recent" id="recent" aria-labelledby="recent-h" hidden>
+      <div class="hd"><h3 id="recent-h">Recent moods</h3><span class="s12 muted">trading days · S&amp;P 500 change</span></div>
+      <ul class="spl" id="spl"></ul>
+    </section>
+
+    <section class="other" id="other" aria-labelledby="other-h" hidden>
+      <div class="hd"><h3 id="other-h">Other signals</h3></div>
+      <p class="s12 muted sub">Not used by the model: tested as inputs in October 2026 and they did not improve its accuracy</p>
+      <ul class="rds" id="sig"></ul>
+    </section>
+
+    <section class="track" id="track" aria-labelledby="track-h" hidden>
+      <div class="hd"><h3 id="track-h">Track record</h3><span class="s12 muted" id="track-since"></span></div>
+      <ul class="trk" id="trk"></ul>
+      <p class="cav" id="cav"></p>
+    </section>
+
     <details class="fold" id="how">
       <summary><h2>How this works</h2><span>Method, how the moods compare, limits</span></summary>
       <div class="fb">
@@ -231,6 +271,7 @@ const F = {
 };
 const word = p => p>=0.9 ? 'very sure' : p>=0.7 ? 'fairly sure' : p>=0.5 ? 'leaning' : 'unsure';
 const sw = (k,c='') => `<span class="sw${VOL[k]?' v':''}${c?' '+c:''}" style="background-color:var(--r${k})"></span>`;
+const esc = s => String(s??'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
 const andList = a => a.length>1 ? a.slice(0,-1).join(', ')+' and '+a[a.length-1] : (a[0]||'');
 function ny(now){
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit',weekday:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(now).map(x=>[x.type,x.value]));
@@ -267,33 +308,46 @@ function drawMood(){
   if (P[k2]>=0.15) sure += ` · could be ${REG[k2]} (${F.pct(P[k2])})`;
   const since = S.spell_start ? ` · since ${F.dm(S.spell_start)} (${S.spell_days} trading day${S.spell_days===1?'':'s'})` : '';
   const why = S.why ? `<p class="why">Mainly because ${S.why}${S.why_against ? ', but '+S.why_against : ''}.</p>` : '';
-  const O = D.outlook?.[S.regime], A = D.outlook_all || {}, Q = D.outlook_oos, q = Q?.[S.regime];
+  const O = D.outlook?.[S.regime];
   const tr = S.train || {}, per = (D.period ? D.period.split(',')[0] : '') + (S.stats_source==='walk-forward' ? ' · walk-forward' : tr.refit==='fixed' && tr.end ? ` · model fitted to ${String(tr.end).slice(0,4)}` : '');
-  const after = (v, f) => q && ok(q[v]) ? ` · since ${Q.since} ${f(q[v])}` : '';
-  let rows = '';
+  let rows = '', risk = '';
+  try { risk = riskHTML(); } catch(e) { console.warn('risk', e); }
   if (O) {
     if (ok(O.spell)) rows += `<li><b>${F.dur(O.spell)}</b><span>how long this mood usually lasts</span></li>`;
-    if (ok(O.move)) rows += `<li><b>±${(O.move*100).toFixed(1)}%</b><span>typical move in the following month${ok(A.move)?`<small>all days ±${(A.move*100).toFixed(1)}%${after('move', v=>'±'+(v*100).toFixed(1)+'%')}</small>`:''}</span></li>`;
-    if (ok(O.fall5)) rows += `<li><b>${F.oneIn(O.fall5)}</b><span>how often a 5% drop followed within a month${ok(A.fall5)?`<small>all days ${F.oneIn(A.fall5)}${after('fall5', F.oneIn)}</small>`:''}</span></li>`;
     if (REG.includes(O.to) && ok(O.to_share)) rows += `<li><b class="nm">${sw(REG.indexOf(O.to))}${O.to}</b><span>what it most often turns into<small>${Math.round(O.to_share*10)} in 10 times</small></span></li>`;
   }
   $('mood').innerHTML = `<div class="kicker">Today's mood${prov?'<span class="pill info">Provisional · US market open</span>':''}</div>
     <h2 class="name">${sw(cur,'lg')}${REG[cur]}</h2>
     <p class="desc">${DESC[cur]}<span class="since">${since}</span></p>
     <p class="sure">${sure}</p>${why}
-    ${rows ? `<div class="next"><h3>What usually happens next${per ? `<span>${per}</span>` : ''}</h3><ul class="facts">${rows}</ul></div>` : ''}`;
+    ${rows ? `<div class="next"><h3>What usually happens next${per ? `<span>${per}</span>` : ''}</h3><ul class="facts">${rows}</ul></div>` : ''}${risk}`;
+}
+/* risk ahead: the model's own forecasts, same row design as the readings */
+function riskHTML(){
+  const rs = (D.risk||[]).filter(r=>ok(r.value) && (r.spark||[]).filter(ok).length>1); if (!rs.length) return '';
+  const pm = x => '±'+x.toFixed(1)+'%', usual = r => `(middle 40% of days since ${r.since}); higher than ${Math.round(r.pct*100)}% of them.`;
+  const rows = rs.map(r => r.key==='move'
+    ? rdRow(r, pm(r.value), ok(r.actual) ? `<span class="pt">actual ${pm(r.actual)}</span>` : '',
+        `${ok(r.p30)&&ok(r.p70) ? `Usual range ${pm(r.p30)} to ${pm(r.p70)} ${usual(r)} ` : ''}Solid line: the model's forecast for a typical day (one standard deviation); dashed line: actual daily swings over the previous 21 days.`)
+    : rdRow(r, r.value<0.02 ? F.pct(r.value) : F.oneIn(r.value), `<span class="pt">${F.pct(r.value)}${ok(r.base) ? ' · all days '+F.oneIn(r.base) : ''}</span>`,
+        `${ok(r.p30)&&ok(r.p70) ? `Usual range ${Math.round(r.p30)}% to ${Math.round(r.p70)}% ${usual(r)} ` : ''}Line: the model's chance each week over the past 12 months.`)).join('');
+  const l2 = rs.some(r=>(r.spark2||[]).some(ok)) ? ' · <i class="l2"></i>actual swings, past 21 days' : '';
+  return `<div class="next"><h3>Risk ahead<span>the model's forecast</span></h3><ul class="rds">${rows}</ul><p class="lg"><i></i>usual range${l2} · dot: today</p></div>`;
 }
 
 /* ---------- what the model sees: real mini charts ---------- */
 function spark(r){
   const v = (r.spark||[]).filter(ok); if (v.length<2) return '<span></span>';
-  const W=128, H=38, pd=3; let lo=Math.min(...v), hi=Math.max(...v);
+  const v2 = (r.spark2||[]).length===v.length ? r.spark2 : [], w2 = v2.filter(ok);
+  const W=128, H=38, pd=3; let lo=Math.min(...v, ...w2), hi=Math.max(...v, ...w2);
   if (ok(r.p30)) lo=Math.min(lo,r.p30); if (ok(r.p70)) hi=Math.max(hi,r.p70);
   const g=(hi-lo)*0.06 || 1; lo-=g; hi+=g;
   const X = i => (pd + i*(W-2*pd)/(v.length-1)).toFixed(1), Y = x => pd + (H-2*pd)*(1-(x-lo)/(hi-lo));
   const band = ok(r.p30)&&ok(r.p70) ? `<rect class="sz" x="0" width="${W}" y="${Y(r.p70).toFixed(1)}" height="${(Y(r.p30)-Y(r.p70)).toFixed(1)}"/>` : '';
-  return `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true">${band}<path class="sl" d="M${v.map((x,i)=>X(i)+' '+Y(x).toFixed(1)).join('L')}"/><circle class="sd" r="3" cx="${X(v.length-1)}" cy="${Y(v[v.length-1]).toFixed(1)}"/></svg>`;
+  const p2 = w2.length>1 ? v2.map((x,i)=>ok(x) ? (i&&ok(v2[i-1])?'L':'M')+X(i)+' '+Y(x).toFixed(1) : '').join('') : '';
+  return `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true">${band}${p2?`<path class="sl2" d="${p2}"/>`:''}<path class="sl" d="M${v.map((x,i)=>X(i)+' '+Y(x).toFixed(1)).join('L')}"/><circle class="sd" r="3" cx="${X(v.length-1)}" cy="${Y(v[v.length-1]).toFixed(1)}"/></svg>`;
 }
+const rdRow = (r, num, pt, t) => `<li class="rd" title="${esc(t)}"><div class="t"><span class="lab">${esc(r.label)}</span><span class="nt">${esc(r.note)}</span></div>${spark(r)}<b class="n">${num}</b><div class="v"><span class="${r.unusual?'u':''}">${esc(r.verdict)}</span>${pt||''}</div></li>`;
 function drawSees(){
   const rs = (D.headline||[]).map(k=>RD[k]).filter(r=>r && ok(r.value));
   $('grid').classList.toggle('nosees', !rs.length); $('sees').hidden = !rs.length;
@@ -303,9 +357,30 @@ function drawSees(){
   $('rds').innerHTML = rs.map(r => {
     const p = r.push && r.push.strength>=0.3 ? `<span class="pt" title="On its own, this reading points to ${r.push.toward} moods">points to ${r.push.toward}</span>` : '';
     const t = ok(r.p30) ? `Usual range ${F.rd(r,r.p30)} to ${F.rd(r,r.p70)}; higher than ${Math.round(r.pct*100)}% of days since ${yr}. Line: last 12 months.` : '';
-    return `<li class="rd" title="${t}"><div class="t"><span class="lab">${r.label}</span><span class="nt">${r.note||''}</span></div>${spark(r)}<b class="n">${F.rd(r,r.value)}</b><div class="v"><span class="${r.unusual?'u':''}">${r.verdict||''}</span>${p}</div></li>`;
+    return rdRow(r, F.rd(r,r.value), p, t);
   }).join('');
   $('rd-lg').innerHTML = `<i></i>usual range (middle 40% of days since ${yr}) · line: past 12 months · dot: today`;
+}
+
+/* ---------- recent moods, other signals, track record ---------- */
+function drawRecent(){
+  const sp = (D.spells||[]).filter(s=>REG[s.k] && s.a && s.b && ok(s.n));
+  $('recent').hidden = !sp.length; if (!sp.length) return;
+  $('spl').innerHTML = sp.map((s,i)=>`<li${i?'':' class="cur" title="Still going"'}><span class="nm"><span class="mn">${sw(s.k)}${REG[s.k]}</span><span class="dt">${F.dm(s.a)}${s.b!==s.a?'–'+F.dm(s.b):''}</span></span><span class="ds">${s.n} day${s.n===1?'':'s'}</span><b>${ok(s.chg)?F.sg(s.chg*100,1)+'%':''}</b></li>`).join('');
+}
+function drawOther(){
+  const gs = (D.signals||[]).filter(g=>ok(g.value) && ok(g.pct) && (g.spark||[]).filter(ok).length>1);
+  $('other').hidden = !gs.length; if (!gs.length) return;
+  $('sig').innerHTML = gs.map(g => rdRow(g, F.rd(g,g.value), g.as_of && g.as_of!==S.as_of ? `<span class="pt">data to ${F.dm(g.as_of)}</span>` : '',
+    `${ok(g.p30)&&ok(g.p70) ? `Usual range ${F.rd(g,g.p30)} to ${F.rd(g,g.p70)} (middle 40% of days since ${g.since}); higher than ${Math.round(g.pct*100)}% of them. ` : ''}${g.more ? g.more.charAt(0).toUpperCase()+g.more.slice(1)+'. ' : ''}Line: past 12 months, weekly.${g.source ? ' Source: '+g.source+'.' : ''}`)).join('');
+}
+function drawTrack(){
+  const T = D.track, fs = (T?.facts||[]).filter(f=>f.value && f.label);
+  $('track').hidden = !fs.length; if (!fs.length) return;
+  const y = String(T.period||'').match(/\d{4}/g) || [];
+  $('track-since').textContent = y.length>1 ? `tested on unseen days, ${y[0]}–${y[y.length-1]}` : '';
+  $('trk').innerHTML = fs.map(f=>`<li${f.detail?` title="${esc(f.detail)}"`:''}><b>${esc(f.value)}</b><span>${esc(f.label)}</span></li>`).join('');
+  $('cav').innerHTML = (T.caveat ? esc(T.caveat)+' ' : '') + (T.record ? `<a href="${esc(T.record)}" rel="noopener">Full test record</a>` : '');
 }
 
 /* ---------- key ---------- */
@@ -379,7 +454,7 @@ function render(){
   s += runs.map(o=>`<rect class="m${o.k}${o.u?' un':''}" x="${ML+o.a*bw}" y="${rb}" width="${Math.min(IW-o.a*bw,(o.e-o.a)*bw)}" height="${RIB}"/>`).join('');
   // model trained up to here
   const tr=S.train;
-  if (tr?.refit==='fixed' && tr.end) { const o=(iso2t(tr.end)-T0)/DAY; if (o>d0 && o<d1) { const x=X(o), left=W-MR-x<160;
+  if (tr?.end) { const o=(iso2t(tr.end)-T0)/DAY; if (o>d0 && o<d1) { const x=X(o), left=W-MR-x<160;
     s += `<line class="trn" x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${MT}" y2="${rb+RIB}"/><text class="lbl halo" x="${(x+(left?-6:6)).toFixed(1)}" y="${MT+12}" text-anchor="${left?'end':'start'}">${nar?'trained to here':'model trained up to here'}</text>`; } }
   s += `<circle class="last" r="3.5" cx="${X(day[N-1]).toFixed(1)}" cy="${Y(get(N-1)).toFixed(1)}"/></g><line class="xh" id="xh" y1="${MT}" y2="${rb+RIB}"/><circle class="hdot" id="hd" r="4"/></svg>`;
   el.innerHTML = s;
@@ -426,24 +501,29 @@ const TABLES = {
 };
 seg('tbls', ()=>tbl, v=>{ tbl=v; section('tbl', ()=>{ $('tbl').innerHTML=TABLES[tbl](); }); });
 function drawFold(){
-  const inp=S.inputs||[], cal=S.calibration, tr=S.train||{}, yr=s=>s?String(s).slice(0,4):'';
-  $('method').textContent = `Each trading day the model reads ${inp.length} things about the market (${andList(inp)}) and works out how likely each of six moods is. A mood combines direction (Bull = rising, Sideways = flat, Bear = falling) with how jittery prices are (Quiet or Volatile). ${tr.refit==='fixed' && tr.end ? `Each day's mood uses only prices up to that day, but the model's settings were learned from ${yr(tr.start)}–${yr(tr.end)}, so moods before ${+yr(tr.end)+1} are a fitted view.` : "Each day's mood uses only prices up to that day."} It re-reads the latest prices every 15 minutes while US markets are open.`
-    + (cal && ok(cal.hit) ? ` When it has said "very sure" since ${cal.since||yr(tr.start)}, its call matched its own later hindsight view ${Math.round(cal.hit*100)} times in 100.` : '');
+  const inp=S.inputs||[], cal=S.calibration, tr=S.train||{}, md=S.model||{}, yr=s=>s?String(s).slice(0,4):'', y1=tr.end ? +yr(tr.end)+1 : null;
+  $('method').textContent = `Each trading day the model reads ${inp.length} things about the market (${andList(inp)}) and works out how likely each of six moods is. A mood combines direction (Bull = rising, Sideways = flat, Bear = falling) with how jittery prices are (Quiet or Volatile).`
+    + (inp.some(x=>/VIX/.test(x)) ? ` The last day's move is measured against the move the VIX implied, so a 1% day counts for more when markets are calm.` : '')
+    + (ok(md.tau) ? ` Its probabilities are deliberately damped, so one odd day does not flip the mood.` : '')
+    + (tr.refit==='yearly' && tr.end ? ` It is retrained once a year on all data to 31 December (now ${yr(tr.start)}–${yr(tr.end)}; next retrain early January ${y1+1}). Each day's mood uses only prices up to that day.`
+      : tr.refit==='fixed' && tr.end ? ` Each day's mood uses only prices up to that day, but the model's settings were learned from ${yr(tr.start)}–${yr(tr.end)}, so moods before ${y1} are a fitted view.` : ` Each day's mood uses only prices up to that day.`)
+    + ` It re-reads the latest prices every 15 minutes while US markets are open.`
+    + (cal && ok(cal.hit) ? ` When it has said "very sure" since ${cal.since||yr(tr.start)}, its call held up ${Math.round(cal.hit*100)} times in 100 against its own later hindsight view.` : '');
   section('tbl', ()=>{ $('tbl').innerHTML=TABLES[tbl](); });
   const L=S.lag_days, rare=REG.filter(r=>D.outlook?.[r]?.rare);
   const lagTxt = L && ok(L[0]) ? (L[0]===L[1] ? `about ${L[0]}` : `about ${L[0]}–${L[1]}`) : '';
   $('limits').innerHTML = [
     lagTxt && `Moods show up ${lagTxt} trading days after they start: the model waits for evidence.`,
     tr.refit==='fixed' && tr.end ? `Its settings were learned from ${yr(tr.start)}–${yr(tr.end)} data; later days were not used to set it up.`
-      : tr.refit==='yearly' ? 'It is re-trained once a year on all data up to then.' : '',
+      : tr.refit==='yearly' && tr.end ? `Moods before ${y1} are a fitted view: the model had already seen those years when it drew them.` : '',
     S.stats_source==='walk-forward' && `The 'What usually happens next' figures come from a walk-forward version, where each year's moods were drawn by a model trained only on earlier years.`,
     rare.length && `Rare moods (${andList(rare)}) rest on few examples.`,
     `Bear moods describe what prices have been doing, not a forecast: markets have often risen after them.`,
-    `An upgrade was tested in October 2026 (history back to 1986, credit spreads, VIX-scaled daily moves, steadier probabilities). On unseen 2019–2026 data the best version forecast better and switched mood far less often, but it failed one check set in advance, so this model stays and the upgrade is re-tested on new data until October 2027. <a href="https://github.com/maxgilbertson/market-regime-hmm/tree/main/docs/upgrade-2026-10">Full test record</a>`,
+    `This VIX-scaled version replaced the earlier model in October 2026 after a test on unseen 2019–2026 data. It failed one check set in advance (5% falls followed Bear Quiet days more often than Bear Volatile days), so read Bear Quiet and Bear Volatile both as "falling" rather than as a ranking of danger. <a href="https://github.com/maxgilbertson/market-regime-hmm/blob/main/docs/upgrade-2026-10/RESULTS.md" rel="noopener">Full test record</a>`,
     `'Points to' and 'Mainly because' look at each reading on its own; the model weighs them together, so treat them as a rough guide.`,
     'Past patterns before trading costs; not a forecast or a trading signal.',
   ].filter(Boolean).map(t=>`<li>${t}</li>`).join('');
-  $('tech').innerHTML = `Six-state Gaussian hidden Markov model · filtered (forward-only) probabilities · ${cal?.method || 'raw model probabilities'}`
+  $('tech').innerHTML = `Six-state Gaussian hidden Markov model${md.label ? ` (${esc(md.label)})` : ''} · filtered (forward-only) probabilities${ok(md.tau) ? `, tempered (τ = ${md.tau})` : ''} · ${cal?.method || 'raw model probabilities'}`
     + (tr.end ? ` · trained ${yr(tr.start)}–${yr(tr.end)}` : '') + ` · Raw data: <a href="data/summary.json">summary.json</a> · <a href="data/regime_history.csv">full history (CSV)</a>`;
   $('lagline').textContent = lagTxt ? ` · Moods show up ${lagTxt} trading days late` : '';
 }
@@ -451,7 +531,7 @@ function drawFold(){
 function renderAll(){
   derive();
   section('meta', drawMeta); section('mood', drawMood); section('sees', drawSees); section('key', drawKey);
-  section('chart', render); section('how', drawFold);
+  section('chart', render); section('recent', drawRecent); section('other', drawOther); section('track', drawTrack); section('how', drawFold);
 }
 if (!D) { $('nodata').hidden=false; $('grid').hidden=true; }
 else {

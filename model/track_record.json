@@ -1,0 +1,38 @@
+{
+ "period": "2019-01-02 to 2026-10-09",
+ "basis": "walk-forward: each year's calls came from a version trained only on earlier years",
+ "facts": [
+  {
+   "key": "forecast",
+   "value": "Better",
+   "label": "at forecasting daily moves than the previous version",
+   "detail": "log score 3.254 vs 3.209; 95% lower bound of the gain +0.026"
+  },
+  {
+   "key": "vs_garch",
+   "value": "Beat",
+   "label": "a standard volatility model (GARCH)",
+   "detail": "log score 3.254 vs 3.243"
+  },
+  {
+   "key": "switches",
+   "value": "10 a year",
+   "label": "mood changes (previous version: 15)",
+   "detail": "quick back-and-forth flips 0.1 a year vs 2.2"
+  },
+  {
+   "key": "corrections",
+   "value": "6 of 6",
+   "label": "falls of 10% or more got a Bear call",
+   "detail": "median 20 trading days after the peak; previous version missed 1"
+  },
+  {
+   "key": "very_sure",
+   "value": "97 in 100",
+   "label": "'very sure' calls matched the model's own later hindsight",
+   "detail": "1,386 days, 2019-2026"
+  }
+ ],
+ "caveat": "It failed one check set before the test: after 'Bear Quiet' days a 5% fall followed more often than after 'Bear Volatile' days, so read the two Bear moods as 'falling' rather than as a ranking of danger.",
+ "record": "https://github.com/maxgilbertson/market-regime-hmm/blob/main/docs/upgrade-2026-10/RESULTS.md"
+}

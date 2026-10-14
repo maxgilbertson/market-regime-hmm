@@ -1,51 +1,66 @@
 {
-  "as_of": "2026-09-28",
-  "updated_at_utc": "2026-09-29T10:38:12Z",
-  "model_fitted_at_utc": "2026-09-29 10:37:15+00:00",
-  "ticker": "^GSPC",
-  "train_end": "2022-12-31",
-  "n_obs": 9000,
-  "close": 7683.68994140625,
-  "vix": 16.06999969482422,
-  "regime_filtered": "Sideways Quiet",
-  "regime_smoothed": "Sideways Quiet",
-  "regime_viterbi": "Sideways Quiet",
-  "regime_predicted_tomorrow": "Sideways Quiet",
-  "filtered_probs": {
-    "Bull Quiet": 0.0943,
-    "Bull Volatile": 0.0001,
-    "Sideways Quiet": 0.9056,
-    "Sideways Volatile": 0.0,
-    "Bear Quiet": 0.0,
-    "Bear Volatile": 0.0
-  },
-  "predicted_probs_tomorrow": {
-    "Bull Quiet": 0.1186,
-    "Bull Volatile": 0.0007,
-    "Sideways Quiet": 0.8611,
-    "Sideways Volatile": 0.0033,
-    "Bear Quiet": 0.0161,
-    "Bear Volatile": 0.0001
-  },
-  "entropy_filtered": 0.1747,
-  "entropy_filtered_20d_mean": 0.1173,
-  "features_last": {
-    "ret_1d": -0.00774,
-    "ret_1w": -0.01049,
-    "ret_1m": -0.00614,
-    "ret_1y": 0.15132,
-    "trend_mom": 0.06371,
-    "log_vix": 2.77695,
-    "log_rv21": -2.22034
-  },
-  "expected_duration_days": {
-    "Bull Quiet": 33.3,
-    "Bull Volatile": 76.6,
-    "Sideways Quiet": 19.3,
-    "Sideways Volatile": 34.3,
-    "Bear Quiet": 19.6,
-    "Bear Volatile": 36.3
-  },
-  "loglik_per_obs_train": -5.3009,
-  "loglik_per_obs_full": -5.3066
+ "as_of": "2026-10-13",
+ "updated_at_utc": "2026-10-14T10:47:01Z",
+ "model_fitted_at_utc": "2026-10-12 15:06:53+00:00",
+ "model": {
+  "recipe": "C3",
+  "label": "VIX-scaled",
+  "tau": 0.5,
+  "clip": 5.0,
+  "features": [
+   "z_1d",
+   "ret_1w",
+   "ret_1m",
+   "ret_1y",
+   "trend_mom",
+   "log_vix",
+   "log_rv21"
+  ],
+  "train_start": "1990-01-03",
+  "train_end": "2025-12-31"
+ },
+ "train_end": "2025-12-31",
+ "ticker": "^GSPC",
+ "n_obs": 9262,
+ "close": 7805.4501953125,
+ "vix": 15.270000457763672,
+ "regime_filtered": "Bull Quiet",
+ "regime_smoothed": "Bull Quiet",
+ "regime_viterbi": "Bull Quiet",
+ "filtered_probs": {
+  "Bull Quiet": 0.9946,
+  "Bull Volatile": 0.0006,
+  "Sideways Quiet": 0.0048,
+  "Sideways Volatile": 0.0,
+  "Bear Quiet": 0.0,
+  "Bear Volatile": 0.0
+ },
+ "entropy_filtered": 0.02,
+ "pred_sd": 0.005965,
+ "p_dip21": 0.0821,
+ "dip_heads": {
+  "Bull Quiet": 0.082,
+  "Bull Volatile": 0.1389,
+  "Sideways Quiet": 0.0944,
+  "Sideways Volatile": 0.2843,
+  "Bear Quiet": 0.1276,
+  "Bear Volatile": 0.3788
+ },
+ "features_last": {
+  "z_1d": -0.02393,
+  "ret_1w": -0.00173,
+  "ret_1m": 0.02405,
+  "ret_1y": 0.17497,
+  "trend_mom": 0.07251,
+  "log_vix": 2.72589,
+  "log_rv21": -2.35676
+ },
+ "expected_duration_days": {
+  "Bull Quiet": 33.8,
+  "Bull Volatile": 52.2,
+  "Sideways Quiet": 19.3,
+  "Sideways Volatile": 27.1,
+  "Bear Quiet": 29.9,
+  "Bear Volatile": 37.3
+ }
 }

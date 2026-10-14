@@ -1,6 +1,6 @@
 # Market Regime HMM
 
-A six-state hidden Markov model that classifies the S&P 500 into one of six market regimes each day, using trend momentum, VIX levels, and daily, weekly, monthly and yearly returns.
+A six-state hidden Markov model that sorts each trading day of the S&P 500 into one of six market moods (regimes), using trend momentum, the VIX, and daily, weekly, monthly and yearly returns.
 
 | | Quiet | Volatile |
 |---|---|---|
@@ -8,17 +8,33 @@ A six-state hidden Markov model that classifies the S&P 500 into one of six mark
 | **Sideways** | Sideways Quiet | Sideways Volatile |
 | **Bear** | Bear Quiet | Bear Volatile |
 
-The model reports filtered regime probabilities, regime entropy, and smoothed and Viterbi paths. It is calibrated with Baum-Welch (forward-backward EM) on 1990-2022, and everything after 2022 is out-of-sample. The page turns the top probability into a plain confidence word using the model's walk-forward track record, and drops the next-day regime forecast, which was right no more often than guessing "same as today".
-
 **Live dashboard:** https://maxgilbertson.github.io/market-regime-hmm/
+
+The page shows today's mood with a calibrated confidence word, the model's forecast of the size of tomorrow's move and the chance of a 5% fall within a month, what the model sees today, recent moods, the model's track record on data it never saw, and three context signals it does not use (credit stress, the VIX curve, small caps vs the S&P 500).
+
+## The model (v2, live since 14 October 2026)
+
+**Inputs.** Today's S&P 500 move measured against the daily move implied by yesterday's VIX (so a 1% fall counts for more on a calm day than in a panic); 5-day, 21-day and 252-day log returns; the gap to the 200-day average; the VIX; and 21-day realised volatility. S&P features are built on the full S&P calendar from 1985, and the VIX is joined without filling gaps, so the model's history starts on 3 January 1990. Inputs are standardised with the training rows only and clipped at ±5 sd.
+
+**Calibration.** A Gaussian HMM with full covariances, fitted by Baum-Welch EM with 8 restarts. Each state starts from a rule-based bucket (direction from the signs of the 200-day trend and the 1-month return, Quiet or Volatile from the training VIX median), and a prior on the state means keeps each mood on its definition. The model is refit every 2 January on all data to 31 December (`refit.yml`). A new fit is kept only if every mood still means what its name says and it agrees with the previous fit on at least 85% of the last five years' days. Otherwise the old fit stays and an issue is opened.
+
+**Inference.** A forward pass with the evidence tempered by 0.5 gives the filtered probabilities shown on the page. They are steadier and better calibrated than the raw filter. The top probability becomes a confidence word through an isotonic map fitted on 2001-2018 walk-forward days. On unseen 2019-2026 days its calibration error was 0.021, and "very sure" calls held up 97 times in 100. The model also gives:
+- a forecast of the size of tomorrow's move: the mixture over moods of each mood's return spread, scaled by today's VIX;
+- the chance of a 5% fall within 21 trading days: each mood's shrunk historical rate, weighted by today's probabilities.
+
+## How it was chosen
+
+In October 2026 five upgrades were tested against the previous model under a plan fixed in advance ([PREREG.md](docs/upgrade-2026-10/PREREG.md)): history back to 1986, credit spreads, VIX-scaled moves and steadier probabilities. An earlier screen also tried the yield curve, the dollar, small caps, VIX term structure and weekly macro data, which did not help or cut too much history. VIX-scaled moves won on 2001-2018. On unseen 2019-2026 data, against the previous model:
+- it forecast daily moves better (95% lower bound of the gain +0.026 nats a day);
+- it beat a standard GARCH volatility model;
+- it changed mood about 10 times a year instead of 15;
+- it caught all six falls of 10% or more.
+
+It failed one pre-set label check: after "Bear Quiet" days a 5% fall followed more often than after "Bear Volatile" days. It went live because accuracy comes first, and the page says to read both Bear moods as "falling" rather than as a ranking of danger. Full record: [docs/upgrade-2026-10/RESULTS.md](docs/upgrade-2026-10/RESULTS.md). The previous model is kept in `model/legacy/`.
 
 ## Live updates
 
-A GitHub Actions workflow runs every 15 minutes. It downloads fresh S&P 500 and VIX prices, re-runs the filter with the saved calibration in `model/hmm_params.json`, and republishes the dashboard to GitHub Pages. During US market hours the latest day is a live, partial session, so the current regime call can move intraday. An open dashboard reloads itself every 15 minutes.
-
-GitHub runs scheduled jobs on a best-effort basis, so an update can land a few minutes late. Raw outputs from the latest run are also published under `/data/`: `summary.json`, `regime_history.csv` and `data.json` (the compact data the page draws from). The page checks `summary.json` every few minutes and redraws itself when new data arrives.
-
-To recalibrate, run `python hmm_regime.py --refit` locally and commit the new `model/hmm_params.json`. Changing any modelling flag also triggers a refit automatically.
+A GitHub Actions workflow runs every 15 minutes. It downloads fresh S&P 500 and VIX prices (falling back to the last good copy if Yahoo Finance is down), re-runs the filter with `model/hmm_params.json` in about 5 seconds, fetches the context signals, and republishes to GitHub Pages. During US market hours the latest day is a live, partial session, so the call can move intraday. Open pages check `data/summary.json` and redraw when new data arrives. GitHub runs scheduled jobs on a best-effort basis, so an update can land a few minutes late.
 
 ## Quick start
 
@@ -26,64 +42,32 @@ Requires Python 3.10 or newer.
 
 ```bash
 pip install -r requirements.txt
-python hmm_regime.py          # downloads ^GSPC and ^VIX, fits the model, writes out/
-python build_dashboard.py     # bundles out/ into regime_dashboard.html
+python hmm_regime.py          # downloads ^GSPC and ^VIX, runs the model, writes out/
+python context_data.py        # optional context signals for the page
+python build_dashboard.py     # bundles out/ and model/ into regime_dashboard.html
 ```
 
-Useful options for `hmm_regime.py`:
+Other modes of `hmm_regime.py`: `--offline` (use cached prices), `--refit --train-end YYYY-12-31` (yearly recalibration with its checks), `--append-wf YYYY` (add a finished year's as-called moods to `model/wf_history.csv`).
 
-| Flag | Default | Meaning |
-|---|---|---|
-| `--ticker` | `^GSPC` | Index to model |
-| `--start` | `1990-01-01` | First date downloaded |
-| `--train-end` | `2022-12-31` | End of the calibration window |
-| `--seeds` | `8` | EM restarts |
-| `--anchor` | `sign` | Regime anchor rule: `sign` or `tercile` |
-| `--mean-weight` | `3000` | Prior strength holding state means to their anchors; `0` gives free EM |
-| `--outdir` | `out` | Output folder |
-| `--refit` | off | Ignore the saved calibration and fit again |
-| `--offline` | off | Use cached prices instead of downloading |
-
-## October 2026 upgrade test
-
-Five upgrades were tested against this model under a plan fixed in advance: history back to 1986, credit spreads, VIX-scaled daily moves and steadier probabilities. The best, VIX-scaled moves, forecast better and switched mood far less often on unseen 2019-2026 data. It failed one pre-set check: "Bear Quiet" was followed by drops more often than "Bear Volatile". So this model stays, and the candidate (`model/shadow/`) is re-tested on new data until October 2027. Full record: [docs/upgrade-2026-10/RESULTS.md](docs/upgrade-2026-10/RESULTS.md).
+## Files
 
 | File | Contents |
 |---|---|
-| `model/hmm_params.json` | Live calibration (1990-2022) |
-| `model/confidence_map.json` | Maps the top probability to how often such calls held up, 2001-2025 walk-forward |
-| `model/wf_history.csv` | Walk-forward moods 2001-2026, each year from a fit trained only on earlier years; used for the page's "what usually happens next" figures |
-| `model/shadow/` | Frozen upgrade candidate for the prospective test |
-
-## Method
-
-**Observations.** Log returns over 1, 5, 21 and 252 trading days; trend momentum as log(close / 200-day SMA); log VIX; log 21-day realised volatility. All features are standardised with training-window statistics only, so there is no look-ahead in the out-of-sample period.
-
-**Calibration.** A Gaussian HMM with full covariances, fit by Baum-Welch EM. Each state is initialised from a rule-based bucket: direction from the sign of the 200-day trend and the 1-month return, and volatility from the VIX median. A Gaussian prior on the state means keeps each state on its definition during EM.
-
-**Inference.** A log-space forward pass gives filtered probabilities P(state at t | data up to t). A forward-backward pass gives smoothed probabilities, cross-checked against hmmlearn to about 1e-11. Regime entropy is the Shannon entropy of the filtered distribution divided by log 6, so 0 means certain and 1 means uniform.
-
-## Outputs
-
-| File | Contents |
-|---|---|
-| `out/regime_history.csv` | Daily features, filtered and smoothed probabilities, labels and entropy |
-| `out/summary.json` | Latest regime call and probabilities |
-| `out/transition_matrix.csv` | Daily regime transition probabilities |
-| `out/regime_stats.csv` | Per-regime next-day return, volatility, Sharpe and average VIX |
-| `out/state_means.csv` | Fitted state centres in raw units |
-| `out/regime_chart.png` | Static chart of the last 12 years |
-| `out/report.txt` | Console report from the last run |
+| `model/hmm_params.json` | Live calibration (trained on 1990-2025) and per-mood dip rates |
+| `model/confidence_map.json` | Top probability to confidence, with its unseen-data check |
+| `model/wf_history.csv` | Moods 2001-2026 as called at the time, each year by a fit trained only on earlier years |
+| `model/track_record.json` | The 2019-2026 test results shown on the page |
+| `out/regime_history.csv` | Daily inputs, filtered and smoothed probabilities, moods, forecast move size (`pred_sd`) and 5% fall chance (`p_dip21`) |
+| `out/summary.json` | Today's call |
+| `out/context.json` | Context signals (not used by the model) |
+| `out/transition_matrix.csv`, `out/state_means.csv`, `out/regime_stats.csv` | Model details |
 
 ## Constraints and drawbacks
 
-- **Overlapping returns.** The weekly, monthly and yearly returns share most of their inputs, which breaks the HMM's conditional-independence assumption. This inflates persistence and makes the filtered probabilities over-confident.
-- **Gaussian emissions.** Returns and VIX are fat-tailed, so crash days can flip the regime abruptly.
-- **Six states are imposed.** The 3 x 2 grid is a modelling convention, not a count selected by BIC or cross-validation.
-- **Labels are partly imposed.** Free EM does not find a real Bear Quiet state, because persistent low-VIX bear markets barely exist in S&P history. The mean prior holds it in place at a cost of about 0.2 nats per observation.
-- **Hindsight in design choices.** The anchor rule and prior weight were chosen after viewing full-sample results.
-- **Filtered calls lag.** Switches typically take 2 to 5 sessions. Smoothed and Viterbi paths use future data and are not tradable.
-- **Descriptive statistics only.** The regime statistics ignore costs and sizing and are not a backtest.
-- **Limited data.** One price index without dividends and one volatility gauge, from free yfinance downloads.
+- **Overlapping returns.** The weekly, monthly and yearly returns share inputs, which breaks the HMM's independence assumption. Tempering and the confidence map correct most of the resulting over-confidence.
+- **Six moods are imposed.** The 3 x 2 grid is a convention, and "Bear Quiet" is rare and weakly identified. The two Bear moods are not a reliable ranking of danger.
+- **Gaussian moods.** Crash days are still more extreme than the model expects. VIX scaling narrows the gap.
+- **Calls lag.** A new mood usually shows up 1-3 trading days after it starts. Smoothed paths use hindsight and are not tradable.
+- **Limited inputs.** The model uses only the S&P 500 (price index, no dividends) and the VIX, from free Yahoo Finance data. Extra series were tested and did not help.
 
 This is a research tool, not investment advice.
